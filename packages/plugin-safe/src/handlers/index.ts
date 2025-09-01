@@ -1,0 +1,1 @@
+export { walletInitializationHandler } from './walletInitializer';

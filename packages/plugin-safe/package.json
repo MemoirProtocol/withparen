@@ -1,0 +1,43 @@
+{
+  "name": "@elizaos/plugin-safe",
+  "version": "0.1.0",
+  "description": "Safe smart account integration plugin for ElizaOS - enables individual Safe accounts for users with delegated permissions",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "lint": "eslint . --fix"
+  },
+  "dependencies": {
+    "@safe-global/protocol-kit": "^4.1.0",
+    "@safe-global/api-kit": "^2.4.1",
+    "@safe-global/types-kit": "^1.0.0",
+    "ethers": "^6.13.4",
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "@elizaos/core": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "elizaos",
+    "plugin",
+    "safe",
+    "smart-account",
+    "wallet",
+    "ethereum",
+    "web3",
+    "account-abstraction"
+  ]
+}
