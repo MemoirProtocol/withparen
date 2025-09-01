@@ -1,4 +1,3 @@
-export * from './actions/transfer';
 export * from './actions/trust';
 export * from './providers/wallet';
 export * from './providers/get-balance';
@@ -6,7 +5,6 @@ export * from './service';
 export * from './types';
 
 import type { Plugin } from '@elizaos/core';
-import { transferAction } from './actions/transfer';
 import { trustAction } from './actions/trust';
 import { evmWalletProvider } from './providers/wallet';
 import { tokenBalanceProvider } from './providers/get-balance';
@@ -18,7 +16,7 @@ export const circlesPlugin: Plugin = {
   providers: [evmWalletProvider, tokenBalanceProvider],
   evaluators: [],
   services: [EVMService],
-  actions: [transferAction, trustAction],
+  actions: [trustAction],
 };
 
 export default circlesPlugin;

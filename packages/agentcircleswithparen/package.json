@@ -1,5 +1,5 @@
 {
-  "name": "agentparen-circles",
+  "name": "agentcircleswithparen",
   "description": "Project starter for elizaOS",
   "version": "0.1.0",
   "type": "module",
@@ -34,7 +34,7 @@
     "@elizaos/plugin-bootstrap": "1.3.1",
     "@elizaos/plugin-circles": "workspace:*",
     "@elizaos/plugin-discover-connection": "workspace:*",
-    "@elizaos/plugin-telegram":"latest",
+    "@elizaos/plugin-telegram": "latest",
     "@tanstack/react-query": "^5.29.0",
     "clsx": "^2.1.1",
     "react": "^18.3.1",
