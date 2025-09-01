@@ -122,7 +122,7 @@ export class BridgeAction {
     } catch (error) {
       elizaLogger.error(
         `Failed to resolve token ${tokenSymbolOrAddress} on chain ${chainId}:`,
-        error
+        error instanceof Error ? error.message : String(error)
       );
       // If LiFi fails, return original value and let downstream handle the error
       return tokenSymbolOrAddress;
@@ -153,7 +153,7 @@ export class BridgeAction {
       });
       return decimals;
     } catch (error) {
-      elizaLogger.error(`Failed to get decimals for token ${tokenAddress} on ${chainName}:`, error);
+      elizaLogger.error(`Failed to get decimals for token ${tokenAddress} on ${chainName}:`, error instanceof Error ? error.message : String(error));
       // Default to 18 decimals if we can't determine
       return 18;
     }
@@ -245,7 +245,7 @@ export class BridgeAction {
           logger.debug('Chain switch successful');
           return walletClient as any; // Type cast to resolve compatibility issues
         } catch (error) {
-          logger.error('Chain switch failed:', error);
+          logger.error('Chain switch failed:', error instanceof Error ? error.message : String(error));
           throw error;
         }
       },
@@ -506,7 +506,7 @@ export class BridgeAction {
         chainId: toChainConfig.id,
       };
     } catch (error) {
-      logger.error('Bridge execution failed:', error);
+      logger.error('Bridge execution failed:', error instanceof Error ? error.message : String(error));
 
       // Try to get more details about the failure
       const status = this.activeRoutes.get(routeId);
@@ -532,7 +532,7 @@ export class BridgeAction {
       });
       return status;
     } catch (error) {
-      logger.error('Failed to get transaction status:', error);
+      logger.error('Failed to get transaction status:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   }
@@ -619,7 +619,7 @@ const buildBridgeDetails = async (
     amount: content.amount,
   };
 
-  logger.debug('###### BRIDGE OPTIONS', bridgeOptions);
+  logger.debug('###### BRIDGE OPTIONS', JSON.stringify(bridgeOptions));
 
   return bridgeOptions;
 };
@@ -783,7 +783,7 @@ export async function checkBridgeStatus(
       error: status.status === 'FAILED' ? status.substatus : undefined,
     };
   } catch (error) {
-    logger.error('Failed to check bridge status:', error);
+    logger.error('Failed to check bridge status:', error instanceof Error ? error.message : String(error));
     throw error;
   }
 }

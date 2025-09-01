@@ -104,7 +104,7 @@ export async function formatSharedRelationshipMemories(
     }
   } catch (error) {
     logger.error('[Deepen-Connection] Error formatting shared relationship memories:');
-    logger.error(error);
+    logger.error(error instanceof Error ? error.message : String(error));
     return '';
   }
 }
@@ -137,7 +137,7 @@ export const sharedRelationshipMemoryProvider: Provider = {
       return { text: formattedMemories };
     } catch (error) {
       logger.error('[Deepen-Connection] Error in shared relationship memory provider:');
-      logger.error(error);
+      logger.error(error instanceof Error ? error.message : String(error));
       return { text: '' };
     }
   },

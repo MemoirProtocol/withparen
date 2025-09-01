@@ -95,7 +95,7 @@ export class EVMService extends Service {
               name: chain.name,
             };
           } catch (error) {
-            logger.error(`Error formatting chain ${chainName}:`, error);
+            logger.error(`Error formatting chain ${chainName}:`, error instanceof Error ? error.message : String(error));
             return null;
           }
         })
@@ -116,7 +116,7 @@ export class EVMService extends Service {
         chainDetails.map((c) => c?.chainName).join(', ')
       );
     } catch (error) {
-      logger.error('Error refreshing EVM wallet data:', error);
+      logger.error('Error refreshing EVM wallet data:', error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -135,7 +135,7 @@ export class EVMService extends Service {
 
       return cachedData;
     } catch (error) {
-      logger.error('Error getting cached EVM wallet data:', error);
+      logger.error('Error getting cached EVM wallet data:', error instanceof Error ? error.message : String(error));
       return undefined;
     }
   }

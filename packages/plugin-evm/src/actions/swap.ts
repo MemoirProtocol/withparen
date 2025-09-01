@@ -110,7 +110,7 @@ export class SwapAction {
     } catch (error) {
       elizaLogger.error(
         `Failed to resolve token ${tokenSymbolOrAddress} on chain ${chainId}:`,
-        error
+        error instanceof Error ? error.message : String(error)
       );
       // If LiFi fails, return original value and let downstream handle the error
       return tokenSymbolOrAddress;
