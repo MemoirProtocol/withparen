@@ -370,7 +370,12 @@ async function handler(runtime: IAgentRuntime, message: Memory, state?: State) {
 
 export const reflectionEvaluator: Evaluator = {
   name: 'DISCOVER-CONNECTION_REFLECTION',
-  similes: ['DISCOVER-CONNECTION_REFLECT', 'PERSONA_EXTRACT', 'CONNECTION_DISCOVER', 'INSIGHT_GATHER'],
+  similes: [
+    'DISCOVER-CONNECTION_REFLECT',
+    'PERSONA_EXTRACT',
+    'CONNECTION_DISCOVER',
+    'INSIGHT_GATHER',
+  ],
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
       const lastMessageId = await runtime.getCache<string>(

@@ -14,7 +14,6 @@ export const character: Character = {
     '@elizaos/plugin-google-genai',
     '@elizaos/plugin-telegram',
     '@elizaos/plugin-discover-connection',
-    '@elizaos/plugin-circles'
   ],
   settings: {
     chains: {

@@ -12,6 +12,8 @@ import {
 } from '@elizaos/core';
 
 import { introductionProposalTemplate } from '../utils/promptTemplates.js';
+import { ProposalQuotaService } from '../services/proposalQuota.js';
+import { UserTrustStatusService } from '../services/userTrustStatus.js';
 
 /**
  * Introduction Proposal Action for Discover-Connection
@@ -32,18 +34,18 @@ export const introProposalAction: Action = {
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
-      // Check if there are any matches with "match_found" status for this user
+      // Check if there are any matches with "circles_trusted" or "ready_for_introduction" status for this user
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
       });
 
-      // Find matches where this user is involved and status is "match_found"
+      // Find matches where this user is involved and status is ready for introduction
       const pendingMatches = matches.filter((match) => {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          matchData.status === 'match_found'
+          (matchData.status === 'circles_trusted' || matchData.status === 'ready_for_introduction')
         );
       });
 
@@ -61,6 +63,28 @@ export const introProposalAction: Action = {
         messageText.includes(keyword)
       );
 
+      // Check quota before validation passes
+      if (pendingMatches.length > 0 && hasIntroductionRequest) {
+        try {
+          const userTrustService = new UserTrustStatusService(runtime);
+          const isUserTrusted = await userTrustService.isUserTrusted(message.entityId);
+
+          const quotaService = new ProposalQuotaService(runtime);
+          const canSendProposal = await quotaService.canSendProposal(
+            message.entityId,
+            isUserTrusted
+          );
+
+          if (!canSendProposal) {
+            logger.info(`[discover-connection] User ${message.entityId} exceeded proposal quota`);
+            return false;
+          }
+        } catch (quotaError) {
+          logger.error(`[discover-connection] Error checking quota: ${quotaError}`);
+          return false;
+        }
+      }
+
       return pendingMatches.length > 0 && hasIntroductionRequest;
     } catch (error) {
       logger.error(`[discover-connection] Error validating intro proposal action: ${error}`);
@@ -76,9 +100,39 @@ export const introProposalAction: Action = {
     callback?: HandlerCallback
   ): Promise<ActionResult> => {
     try {
-      logger.info(`[discover-connection] Processing introduction proposal for user ${message.entityId}`);
+      logger.info(
+        `[discover-connection] Processing introduction proposal for user ${message.entityId}`
+      );
 
-      // Get matches with "match_found" status for this user
+      // Check quota and user trust status first
+      const userTrustService = new UserTrustStatusService(runtime);
+      const isUserTrusted = await userTrustService.isUserTrusted(message.entityId);
+
+      const quotaService = new ProposalQuotaService(runtime);
+      const canSendProposal = await quotaService.canSendProposal(message.entityId, isUserTrusted);
+
+      if (!canSendProposal) {
+        const quotaStatus = await quotaService.getQuotaStatusMessage(
+          message.entityId,
+          isUserTrusted
+        );
+        const quotaErrorText = `You've reached your introduction request limit. ${quotaStatus}`;
+
+        if (callback) {
+          await callback({
+            text: quotaErrorText,
+            actions: ['REPLY'],
+          });
+        }
+
+        return {
+          text: quotaErrorText,
+          success: false,
+          error: new Error('Proposal quota exceeded'),
+        };
+      }
+
+      // Get matches with "circles_trusted" or "ready_for_introduction" status for this user
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
@@ -88,7 +142,7 @@ export const introProposalAction: Action = {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          matchData.status === 'match_found'
+          (matchData.status === 'circles_trusted' || matchData.status === 'ready_for_introduction')
         );
       });
 
@@ -119,7 +173,9 @@ export const introProposalAction: Action = {
       const targetUserId = isUser1 ? matchData.user2Id : matchData.user1Id;
       const requestingUserId = message.entityId;
 
-      logger.info(`[discover-connection] Processing introduction: ${requestingUserId} -> ${targetUserId}`);
+      logger.info(
+        `[discover-connection] Processing introduction: ${requestingUserId} -> ${targetUserId}`
+      );
 
       // Get the target user's connection context to personalize the message
       const targetConnectionContexts = await runtime.getMemories({
@@ -284,7 +340,24 @@ export const introProposalAction: Action = {
         // The introduction is still stored and can be seen when the target user next interacts
       }
 
-      const confirmationText = `Perfect! I've sent an introduction proposal to your potential match. They'll be notified about the connection opportunity and can choose to accept or decline. I'll let you know as soon as I hear back from them!`;
+      // Record the proposal in quota system
+      try {
+        await quotaService.recordProposal(message.entityId, isUserTrusted);
+        logger.info(
+          `[discover-connection] Recorded proposal for ${isUserTrusted ? 'member' : 'non-member'} ${message.entityId}`
+        );
+      } catch (quotaError) {
+        logger.error(`[discover-connection] Error recording proposal: ${quotaError}`);
+        // Continue even if quota recording fails
+      }
+
+      // Get updated quota status for confirmation message
+      const remainingQuotaMessage = await quotaService.getQuotaStatusMessage(
+        message.entityId,
+        isUserTrusted
+      );
+
+      const confirmationText = `Perfect! I've sent an introduction proposal to your potential match. They'll be notified about the connection opportunity and can choose to accept or decline. I'll let you know as soon as I hear back from them!\n\n${remainingQuotaMessage}`;
 
       if (callback) {
         await callback({
@@ -302,6 +375,8 @@ export const introProposalAction: Action = {
           matchId: matchToProcess.id,
           introductionMessage,
           status: 'proposal_sent',
+          isUserTrusted,
+          remainingQuota: remainingQuotaMessage,
         },
       };
     } catch (error) {

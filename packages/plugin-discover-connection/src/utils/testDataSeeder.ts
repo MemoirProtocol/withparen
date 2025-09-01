@@ -135,7 +135,9 @@ export async function seedDiscoverConnectionTestData(
           logger.debug(`[discover-connection] No test data found, proceeding with seeding`);
         }
       } catch (error) {
-        logger.debug(`[discover-connection] Error checking existing data, proceeding with seeding: ${error}`);
+        logger.debug(
+          `[discover-connection] Error checking existing data, proceeding with seeding: ${error}`
+        );
       }
     }
 
@@ -151,7 +153,9 @@ export async function seedDiscoverConnectionTestData(
         logger.debug(`[discover-connection]   - Entity ID: ${user.id}`);
         logger.debug(`[discover-connection]   - Room ID: ${userRoomId} (same as entityId)`);
         logger.debug(`[discover-connection]   - World ID: ${worldId} (all zeros)`);
-        logger.debug(`[discover-connection]   - Context length: ${user.personaContext.length} characters`);
+        logger.debug(
+          `[discover-connection]   - Context length: ${user.personaContext.length} characters`
+        );
 
         // Create memory with proper UUID formats
         const memory = {
@@ -172,7 +176,9 @@ export async function seedDiscoverConnectionTestData(
           createdAt: Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000, // Random time in last 7 days
         };
 
-        logger.debug(`[discover-connection] Creating memory with embedding using correct ElizaOS pattern...`);
+        logger.debug(
+          `[discover-connection] Creating memory with embedding using correct ElizaOS pattern...`
+        );
 
         // Use the correct pattern: addEmbeddingToMemory FIRST (generates embedding), then createMemory (stores both)
         logger.debug(`[discover-connection] Generating embedding for persona context...`);
@@ -187,7 +193,9 @@ export async function seedDiscoverConnectionTestData(
         );
 
         // Now create memory with embedding (this stores both memory and embedding in database)
-        logger.debug(`[discover-connection] Storing memory with embedding in persona_contexts table...`);
+        logger.debug(
+          `[discover-connection] Storing memory with embedding in persona_contexts table...`
+        );
         const memoryId = await runtime.createMemory(memoryWithEmbedding, 'persona_contexts', true);
 
         // Retrieve the final created memory
@@ -197,17 +205,23 @@ export async function seedDiscoverConnectionTestData(
           throw new Error(`Failed to retrieve created memory with ID: ${memoryId}`);
         }
 
-        logger.info(`[discover-connection] ✅ Successfully created persona context for ${user.name}:`);
+        logger.info(
+          `[discover-connection] ✅ Successfully created persona context for ${user.name}:`
+        );
         logger.debug(`[discover-connection]   - Memory ID: ${createdMemory.id}`);
         logger.debug(`[discover-connection]   - Entity ID: ${createdMemory.entityId}`);
         logger.debug(`[discover-connection]   - Room ID: ${createdMemory.roomId}`);
         logger.debug(`[discover-connection]   - Table: persona_contexts`);
-        logger.debug(`[discover-connection]   - Has metadata: ${!!createdMemory.content?.metadata}`);
+        logger.debug(
+          `[discover-connection]   - Has metadata: ${!!createdMemory.content?.metadata}`
+        );
         logger.debug(
           `[discover-connection]   - Metadata name: ${(createdMemory.content?.metadata as any)?.name}`
         );
         logger.debug(`[discover-connection]   - Has embedding: ${!!createdMemory.embedding}`);
-        logger.debug(`[discover-connection]   - Embedding length: ${createdMemory.embedding?.length || 'none'}`);
+        logger.debug(
+          `[discover-connection]   - Embedding length: ${createdMemory.embedding?.length || 'none'}`
+        );
 
         createdMemories.push(createdMemory);
       } catch (error) {
@@ -223,10 +237,18 @@ export async function seedDiscoverConnectionTestData(
     if (createdMemories.length > 0) {
       logger.info(`[discover-connection] Test data stored in room: ${roomId}`);
       logger.info(`[discover-connection] Sample connection contexts to test with:`);
-      logger.info(`[discover-connection]   • "Looking for blockchain engineers with smart contract experience"`);
-      logger.info(`[discover-connection]   • "Need community builders to help grow a Web3 protocol"`);
-      logger.info(`[discover-connection]   • "Seeking technical co-founders for a decentralized data project"`);
-      logger.info(`[discover-connection]   • "Want to connect with VCs interested in infrastructure projects"`);
+      logger.info(
+        `[discover-connection]   • "Looking for blockchain engineers with smart contract experience"`
+      );
+      logger.info(
+        `[discover-connection]   • "Need community builders to help grow a Web3 protocol"`
+      );
+      logger.info(
+        `[discover-connection]   • "Seeking technical co-founders for a decentralized data project"`
+      );
+      logger.info(
+        `[discover-connection]   • "Want to connect with VCs interested in infrastructure projects"`
+      );
     }
 
     return createdMemories;
@@ -239,8 +261,13 @@ export async function seedDiscoverConnectionTestData(
 /**
  * Clean up test data (useful for development)
  */
-export async function cleanupDiscoverConnectionTestData(runtime: IAgentRuntime, roomId?: string): Promise<void> {
-  logger.info(`[discover-connection] Cleaning up test data${roomId ? ` in room ${roomId}` : ''}...`);
+export async function cleanupDiscoverConnectionTestData(
+  runtime: IAgentRuntime,
+  roomId?: string
+): Promise<void> {
+  logger.info(
+    `[discover-connection] Cleaning up test data${roomId ? ` in room ${roomId}` : ''}...`
+  );
 
   try {
     // Note: This is a simplified cleanup. In a real implementation, you might want to

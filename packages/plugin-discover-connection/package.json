@@ -29,7 +29,8 @@
     "@elizaos/core": "workspace:*",
     "@elizaos/plugin-sql": "workspace:*",
     "@elizaos/api-client": "workspace:*",
-    "bun": "^1.2.17"
+    "bun": "^1.2.17",
+    "viem": "^2.21.52"
   },
   "devDependencies": {
     "@types/bun": "^1.2.16",

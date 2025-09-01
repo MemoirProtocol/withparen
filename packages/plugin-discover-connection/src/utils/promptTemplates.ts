@@ -61,15 +61,15 @@ Provide analysis for each candidate and select the best match.
 2. NEVER mention user IDs or candidate numbers
 3. NEVER use phrases like "Candidate 1" or "let's call them"
 4. Focus on ONE key alignment or complementary skill
-5. MUST end with: "Would you like me to introduce you?"
+5. MUST end with: "To connect with them, please join my Circles group first by sharing your wallet address."
 
 ## Good Example:
-"I found someone who's building a grassroots protocol and needs exactly your expertise in tokenomics and community economics. Your skills seem perfectly complementary to their vision. Would you like me to introduce you?"
+"I found someone who's building a grassroots protocol and needs exactly your expertise in tokenomics and community economics. Your skills seem perfectly complementary to their vision. To connect with them, please join my Circles group first by sharing your wallet address."
 
 ## Bad Examples (DO NOT DO THIS):
 - Too long with multiple paragraphs
 - Mentioning "Candidate 1" or user IDs
-- Not ending with the introduction question
+- Not ending with the Circles membership request
 - Over-explaining the match
 
 ## Instructions
@@ -80,7 +80,7 @@ Respond using XML format like this:
 <response>
     <bestMatch>ID or identifier of the best matching candidate</bestMatch>
     <compatibilityScorePlusReasoning>Score 0-100 for the best match followed by detailed explanation of why this is the best match or why no good matches were found</compatibilityScorePlusReasoning>
-    <text>A concise 2-3 sentence introduction highlighting the key match reason and ending with "Would you like me to introduce you?"</text>
+    <text>A concise 2-3 sentence introduction highlighting the key match reason and ending with "To connect with them, please join my Circles group first by sharing your wallet address."</text>
 </response>
 
 IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.

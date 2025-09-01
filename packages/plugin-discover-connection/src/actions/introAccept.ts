@@ -73,7 +73,9 @@ export const introAcceptAction: Action = {
     callback?: HandlerCallback
   ): Promise<ActionResult> => {
     try {
-      logger.info(`[discover-connection] Processing introduction response from user ${message.entityId}`);
+      logger.info(
+        `[discover-connection] Processing introduction response from user ${message.entityId}`
+      );
 
       // Get matches with "introduction_incoming" status for this user
       const matches = await runtime.getMemories({
@@ -294,7 +296,9 @@ export const introAcceptAction: Action = {
             content: updatedOtherMatchContent,
           });
 
-          logger.info(`[discover-connection] Updated other user's match status to connected: ${otherUserId}`);
+          logger.info(
+            `[discover-connection] Updated other user's match status to connected: ${otherUserId}`
+          );
         }
       } else {
         // User declined the introduction

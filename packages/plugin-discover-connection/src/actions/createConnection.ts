@@ -12,6 +12,8 @@ import {
   type UUID,
 } from '@elizaos/core';
 
+import { UserTrustStatusService } from '../services/userTrustStatus.js';
+
 import {
   connectionDiscoveryTemplate,
   compatibilityAnalysisTemplate,
@@ -111,7 +113,9 @@ export const createConnectionAction: Action = {
     callback?: HandlerCallback
   ): Promise<ActionResult> => {
     try {
-      logger.info(`[discover-connection] Starting connection discovery for user ${message.entityId}`);
+      logger.info(
+        `[discover-connection] Starting connection discovery for user ${message.entityId}`
+      );
 
       // Get user's persona and connection memories across all dimension tables
       const personaDimensions = [
@@ -193,7 +197,10 @@ export const createConnectionAction: Action = {
       const connectionMemoryText = allConnectionMemories.map((m) => m.content.text).join('\n');
 
       const recentMessagesText = recentMessages
-        .map((m) => `${m.entityId === runtime.agentId ? 'Discover-Connection' : 'User'}: ${m.content.text}`)
+        .map(
+          (m) =>
+            `${m.entityId === runtime.agentId ? 'Discover-Connection' : 'User'}: ${m.content.text}`
+        )
         .join('\n');
 
       // Generate persona and connection contexts
@@ -484,6 +491,17 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
         });
 
         if (!duplicateMatch) {
+          // Check if user is already trusted to skip Circles onboarding
+          const userTrustService = new UserTrustStatusService(runtime);
+          const isUserTrusted = await userTrustService.isUserTrusted(message.entityId);
+
+          // Set appropriate status based on trust status
+          const matchStatus = isUserTrusted ? 'ready_for_introduction' : 'circles_onboarding';
+
+          logger.info(
+            `[discover-connection] User ${message.entityId} trust status: ${isUserTrusted}, setting match status: ${matchStatus}`
+          );
+
           // Create new match record
           const matchRecord = {
             entityId: message.entityId, // The requesting user
@@ -496,7 +514,7 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
               user2Id: matchedUserId,
               compatibilityScore,
               reasoning: compatibilityScorePlusReasoning,
-              status: 'match_found', // Initial status
+              status: matchStatus,
               personaContext,
               connectionContext,
             },
@@ -504,7 +522,9 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
           };
 
           await runtime.createMemory(matchRecord, 'matches');
-          logger.info(`[discover-connection] Created new match record: ${message.entityId} <-> ${matchedUserId}`);
+          logger.info(
+            `[discover-connection] Created new match record: ${message.entityId} <-> ${matchedUserId}`
+          );
         } else {
           logger.info(
             `[discover-connection] Match already exists between ${message.entityId} and ${matchedUserId}, skipping duplicate creation`

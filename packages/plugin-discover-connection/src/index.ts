@@ -200,7 +200,9 @@ export async function processAttachments(
                 `[discover-connection] Generated description: ${processedAttachment.description?.substring(0, 100)}...`
               );
             } else {
-              logger.warn(`[discover-connection] Failed to parse XML response for image description`);
+              logger.warn(
+                `[discover-connection] Failed to parse XML response for image description`
+              );
             }
           } else if (response && typeof response === 'object' && 'description' in response) {
             // Handle object responses for backwards compatibility
@@ -242,13 +244,17 @@ export async function processAttachments(
 
       processedAttachments.push(processedAttachment);
     } catch (error) {
-      logger.error(`[discover-connection] Failed to process attachment ${attachment.url}: ${error}`);
+      logger.error(
+        `[discover-connection] Failed to process attachment ${attachment.url}: ${error}`
+      );
       // Add the original attachment if processing fails
       processedAttachments.push(attachment);
     }
   }
 
-  logger.debug(`[discover-connection] Processed attachments: ${JSON.stringify(processedAttachments)}`);
+  logger.debug(
+    `[discover-connection] Processed attachments: ${JSON.stringify(processedAttachments)}`
+  );
 
   return processedAttachments;
 }
@@ -321,7 +327,9 @@ const messageReceivedHandler = async ({
   let timeoutId: NodeJS.Timeout | undefined = undefined;
 
   try {
-    logger.info(`[discover-connection] Message received from ${message.entityId} in room ${message.roomId}`);
+    logger.info(
+      `[discover-connection] Message received from ${message.entityId} in room ${message.roomId}`
+    );
     // Generate a new response ID
     const responseId = v4();
     // Get or create the agent-specific map
@@ -434,7 +442,9 @@ const messageReceivedHandler = async ({
 
         // Always respond: skip shouldRespond LLM evaluation
         let shouldRespond = true;
-        logger.debug(`[discover-connection] Skipping shouldRespond evaluation; forcing shouldRespond=true`);
+        logger.debug(
+          `[discover-connection] Skipping shouldRespond evaluation; forcing shouldRespond=true`
+        );
 
         let responseMessages: Memory[] = [];
 
@@ -467,7 +477,9 @@ const messageReceivedHandler = async ({
 
             // Attempt to parse the XML response
             const parsedXml = parseKeyValueXml(response);
-            logger.debug(`[discover-connection] *** Parsed XML Content ***\n${JSON.stringify(parsedXml)}`);
+            logger.debug(
+              `[discover-connection] *** Parsed XML Content ***\n${JSON.stringify(parsedXml)}`
+            );
 
             // Map parsed XML to Content type, handling potential missing fields
             if (parsedXml) {
@@ -593,7 +605,9 @@ const messageReceivedHandler = async ({
               // Do nothing - no callback, no message sent
             } else {
               // Fallback to original logic for any other actions (future-proofing)
-              logger.debug(`[discover-connection] Fallback: using processActions for action: ${action}`);
+              logger.debug(
+                `[discover-connection] Fallback: using processActions for action: ${action}`
+              );
               await runtime.processActions(message, responseMessages, state, callback);
             }
           } else {
@@ -604,7 +618,9 @@ const messageReceivedHandler = async ({
           await runtime.evaluate(message, state, shouldRespond, callback, responseMessages);
         } else {
           // Handle the case where the agent decided not to respond
-          logger.debug('[discover-connection] Agent decided not to respond (shouldRespond is false).');
+          logger.debug(
+            '[discover-connection] Agent decided not to respond (shouldRespond is false).'
+          );
 
           // Check if we still have the latest response ID
           const currentResponseId = agentResponses.get(message.roomId);
@@ -616,7 +632,9 @@ const messageReceivedHandler = async ({
           }
 
           if (!message.id) {
-            logger.error('[discover-connection] Message ID is missing, cannot create ignore response.');
+            logger.error(
+              '[discover-connection] Message ID is missing, cannot create ignore response.'
+            );
             return;
           }
 
@@ -743,7 +761,9 @@ const messageDeletedHandler = async ({
       return;
     }
 
-    logger.info(`[discover-connection] Deleting memory for message ${message.id} from room ${message.roomId}`);
+    logger.info(
+      `[discover-connection] Deleting memory for message ${message.id} from room ${message.roomId}`
+    );
     await runtime.deleteMemory(message.id);
     logger.debug(`[discover-connection] Successfully deleted memory for message ${message.id}`);
   } catch (error: unknown) {
@@ -791,7 +811,9 @@ const channelClearedHandler = async ({
           await runtime.deleteMemory(memory.id);
           deletedCount++;
         } catch (error) {
-          logger.warn(`[discover-connection] Failed to delete message memory ${memory.id}: ${error}`);
+          logger.warn(
+            `[discover-connection] Failed to delete message memory ${memory.id}: ${error}`
+          );
         }
       }
     }
@@ -1312,7 +1334,9 @@ const events = {
 
   [EventType.ENTITY_JOINED]: [
     async (payload: EntityPayload) => {
-      logger.debug(`[discover-connection] ENTITY_JOINED event received for entity ${payload.entityId}`);
+      logger.debug(
+        `[discover-connection] ENTITY_JOINED event received for entity ${payload.entityId}`
+      );
 
       if (!payload.worldId) {
         logger.error('[discover-connection] No worldId provided for entity joined');
@@ -1360,20 +1384,26 @@ const events = {
 
   [EventType.ACTION_STARTED]: [
     async (payload: ActionEventPayload) => {
-      logger.debug(`[discover-connection] Action started: ${payload.actionName} (${payload.actionId})`);
+      logger.debug(
+        `[discover-connection] Action started: ${payload.actionName} (${payload.actionId})`
+      );
     },
   ],
 
   [EventType.ACTION_COMPLETED]: [
     async (payload: ActionEventPayload) => {
       const status = payload.error ? `failed: ${payload.error.message}` : 'completed';
-      logger.debug(`[discover-connection] Action ${status}: ${payload.actionName} (${payload.actionId})`);
+      logger.debug(
+        `[discover-connection] Action ${status}: ${payload.actionName} (${payload.actionId})`
+      );
     },
   ],
 
   [EventType.EVALUATOR_STARTED]: [
     async (payload: EvaluatorEventPayload) => {
-      logger.debug(`[discover-connection] Evaluator started: ${payload.evaluatorName} (${payload.evaluatorId})`);
+      logger.debug(
+        `[discover-connection] Evaluator started: ${payload.evaluatorName} (${payload.evaluatorId})`
+      );
     },
   ],
 
@@ -1395,6 +1425,7 @@ export const discoverConnectionPlugin: Plugin = {
     'Discover-Connection - AI agent focused on connection discovery based on passions, challenges, and preferences',
   actions: [
     actions.createConnectionAction,
+    actions.circlesTrustAction,
     actions.introProposalAction,
     actions.introAcceptAction,
     actions.passMessageAction,

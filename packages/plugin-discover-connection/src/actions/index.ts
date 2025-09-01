@@ -1,4 +1,5 @@
 export { createConnectionAction } from './createConnection';
+export { circlesTrustAction } from './circlesTrust';
 export { introProposalAction } from './introProposal';
 export { introAcceptAction } from './introAccept';
 export { passMessageAction } from './passMessage';

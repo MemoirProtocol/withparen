@@ -9,7 +9,10 @@ import {
   logger,
 } from '@elizaos/core';
 
-import { seedDiscoverConnectionTestData, cleanupDiscoverConnectionTestData } from '../utils/testDataSeeder.js';
+import {
+  seedDiscoverConnectionTestData,
+  cleanupDiscoverConnectionTestData,
+} from '../utils/testDataSeeder.js';
 
 /**
  * Development action to seed test data for Discover-Connection connection discovery
@@ -30,7 +33,9 @@ export const seedTestDataAction: Action = {
       process.env.ALLOW_TEST_SEEDING === 'true';
 
     if (!isDev) {
-      logger.warn('[discover-connection] SEED_TEST_DATA action is only available in development environments');
+      logger.warn(
+        '[discover-connection] SEED_TEST_DATA action is only available in development environments'
+      );
       return false;
     }
 
@@ -52,7 +57,9 @@ export const seedTestDataAction: Action = {
     callback?: HandlerCallback
   ): Promise<ActionResult> => {
     try {
-      logger.info(`[discover-connection] Processing seed test data request from user ${message.entityId}`);
+      logger.info(
+        `[discover-connection] Processing seed test data request from user ${message.entityId}`
+      );
 
       const content = message.content.text?.toLowerCase() || '';
       const isCleanup =

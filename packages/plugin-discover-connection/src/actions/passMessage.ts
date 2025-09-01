@@ -82,7 +82,9 @@ export const passMessageAction: Action = {
     callback?: HandlerCallback
   ): Promise<ActionResult> => {
     try {
-      logger.info(`[discover-connection] Processing message pass request from user ${message.entityId}`);
+      logger.info(
+        `[discover-connection] Processing message pass request from user ${message.entityId}`
+      );
 
       // Get the most recent connected match
       const matches = await runtime.getMemories({
@@ -230,7 +232,9 @@ export const passMessageAction: Action = {
           },
         };
       } catch (messageError) {
-        logger.error(`[discover-connection] Failed to pass message to ${recipientUserId}: ${messageError}`);
+        logger.error(
+          `[discover-connection] Failed to pass message to ${recipientUserId}: ${messageError}`
+        );
 
         const errorText = `I couldn't deliver your message right now. ${recipientDisplayName} might be offline. They'll see it when they come back online, or you can try again later.`;
 
