@@ -502,7 +502,30 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
             `[discover-connection] User ${message.entityId} trust status: ${isUserTrusted}, setting match status: ${matchStatus}`
           );
 
-          // Create new match record
+          // Get matched user's contexts for proper storage
+          const matchedUserPersonaContexts = await runtime.getMemories({
+            entityId: matchedUserId,
+            tableName: 'persona_contexts',
+            count: 1,
+          });
+
+          const matchedUserConnectionContexts = await runtime.getMemories({
+            entityId: matchedUserId,
+            tableName: 'connection_contexts',
+            count: 1,
+          });
+
+          const matchedUserPersonaContext =
+            matchedUserPersonaContexts.length > 0
+              ? matchedUserPersonaContexts[0].content.text
+              : 'Not available';
+
+          const matchedUserConnectionContext =
+            matchedUserConnectionContexts.length > 0
+              ? matchedUserConnectionContexts[0].content.text
+              : 'Not specified';
+
+          // Create new match record with both users' contexts properly stored
           const matchRecord = {
             entityId: message.entityId, // The requesting user
             agentId: runtime.agentId,
@@ -515,6 +538,12 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
               compatibilityScore,
               reasoning: compatibilityScorePlusReasoning,
               status: matchStatus,
+              // Store both users' contexts clearly
+              user1PersonaContext: personaContext, // Requesting user's persona
+              user1ConnectionContext: connectionContext, // What requesting user is looking for
+              user2PersonaContext: matchedUserPersonaContext, // Matched user's persona
+              user2ConnectionContext: matchedUserConnectionContext, // What matched user is looking for
+              // Keep old fields for backward compatibility
               personaContext,
               connectionContext,
             },

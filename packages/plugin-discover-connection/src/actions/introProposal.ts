@@ -177,29 +177,19 @@ export const introProposalAction: Action = {
         `[discover-connection] Processing introduction: ${requestingUserId} -> ${targetUserId}`
       );
 
-      // Get the target user's connection context to personalize the message
-      const targetConnectionContexts = await runtime.getMemories({
-        entityId: targetUserId,
-        tableName: 'connection_contexts',
-        count: 1,
-      });
+      // Get contexts from the stored match record to avoid confusion
+      // isUser1 already defined above
 
-      const targetConnectionContext =
-        targetConnectionContexts.length > 0
-          ? targetConnectionContexts[0].content.text
-          : 'Not specified';
+      // For introduction message TO the target:
+      // - We need the requesting user's persona (who they are)
+      // - We need the target user's connection preferences (what they're looking for)
+      const requestingPersonaContext = isUser1
+        ? matchData.user1PersonaContext || matchData.personaContext || 'Not available'
+        : matchData.user2PersonaContext || 'Not available';
 
-      // Get requesting user's persona context
-      const requestingPersonaContexts = await runtime.getMemories({
-        entityId: requestingUserId,
-        tableName: 'persona_contexts',
-        count: 1,
-      });
-
-      const requestingPersonaContext =
-        requestingPersonaContexts.length > 0
-          ? requestingPersonaContexts[0].content.text
-          : 'Not available';
+      const targetConnectionContext = isUser1
+        ? matchData.user2ConnectionContext || 'Not specified'
+        : matchData.user1ConnectionContext || matchData.connectionContext || 'Not specified';
 
       // Generate personalized introduction message
       const prompt = introductionProposalTemplate
@@ -283,8 +273,26 @@ export const introProposalAction: Action = {
           compatibilityScore: matchData.compatibilityScore,
           reasoning: matchData.reasoning,
           status: 'introduction_incoming', // Target user has incoming introduction
-          personaContext: matchData.connectionContext, // Swap contexts for target user
-          connectionContext: matchData.personaContext,
+          // Store contexts properly - no confusing swaps
+          user1PersonaContext: isUser1
+            ? matchData.user2PersonaContext
+            : matchData.user1PersonaContext,
+          user1ConnectionContext: isUser1
+            ? matchData.user2ConnectionContext
+            : matchData.user1ConnectionContext,
+          user2PersonaContext: isUser1
+            ? matchData.user1PersonaContext
+            : matchData.user2PersonaContext,
+          user2ConnectionContext: isUser1
+            ? matchData.user1ConnectionContext
+            : matchData.user2ConnectionContext,
+          // Keep old fields for backward compatibility
+          personaContext: isUser1
+            ? matchData.user2PersonaContext || 'Not available'
+            : matchData.user1PersonaContext || matchData.personaContext || 'Not available',
+          connectionContext: isUser1
+            ? matchData.user2ConnectionContext || 'Not specified'
+            : matchData.user1ConnectionContext || matchData.connectionContext || 'Not specified',
         },
         createdAt: Date.now(),
       };
