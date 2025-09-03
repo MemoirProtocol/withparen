@@ -5,6 +5,7 @@ export { anxietyProvider } from './anxiety';
 //export { capabilitiesProvider } from './capabilities';
 export { characterProvider } from './character';
 //export { choiceProvider } from './choice';
+export { circlesVerificationProvider } from './circlesVerification';
 export { connectionMemoryProvider } from './connectionMemory';
 //export { entitiesProvider } from './entities';
 //export { evaluatorsProvider } from './evaluators';

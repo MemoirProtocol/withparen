@@ -17,6 +17,7 @@ import { UserTrustStatusService } from '../services/userTrustStatus.js';
 import {
   connectionDiscoveryTemplate,
   compatibilityAnalysisTemplate,
+  membershipStatusTemplate,
 } from '../utils/promptTemplates.js';
 
 // Interface removed - using ActionResult directly
@@ -337,6 +338,22 @@ export const createConnectionAction: Action = {
         `[discover-connection] Found ${matchedUserIds.size} existing matches for user ${message.entityId}`
       );
 
+      // Get all trusted users first - only trusted users can be matched
+      const userTrustService = new UserTrustStatusService(runtime);
+      const allTrustedUsers = await userTrustService.getAllTrustedUsers(200); // Get more trusted users
+      const trustedUserIds = new Set(allTrustedUsers.map((user) => user.userId));
+
+      logger.info(
+        `[discover-connection] Found ${trustedUserIds.size} trusted users for matching pool`
+      );
+
+      // Check requesting user's group membership early to handle no-match scenarios appropriately
+      const isUserGroupMember = await userTrustService.isUserTrusted(message.entityId);
+
+      logger.debug(
+        `[discover-connection] User ${message.entityId} group membership: ${isUserGroupMember}`
+      );
+
       // Check available data for connection discovery
       const allPersonaContexts = await runtime.getMemories({
         tableName: 'persona_contexts',
@@ -344,7 +361,7 @@ export const createConnectionAction: Action = {
       });
 
       logger.info(
-        `[discover-connection] Starting connection discovery with ${allPersonaContexts.length} potential matches available`
+        `[discover-connection] Starting connection discovery with ${allPersonaContexts.length} total persona contexts, filtering to trusted users only`
       );
 
       // Perform vector similarity search for potential matches
@@ -379,8 +396,59 @@ export const createConnectionAction: Action = {
       }
 
       if (potentialMatches.length === 0) {
-        const noMatchText =
-          "There isn't yet enough people to find best possible connection for you now, but I am putting a reminder for myself to check again in few hours and as soon as I find a suitable match, I will let you know!";
+        let noMatchText: string;
+
+        if (!isUserGroupMember) {
+          // For non-members: invite them to join the group and create invitation record
+          noMatchText =
+            trustedUserIds.size === 0
+              ? "There aren't any available matches in our network right now. However, you can expand your opportunities by joining Paren's Circles group!\n\nAs a member, you'll:\n• Get priority matching with other trusted members\n• Be discoverable by new members seeking connections like you\n• Help grow our trusted network\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification."
+              : "I couldn't find a compatible match among the current trusted members, but you can expand your opportunities by joining Paren's Circles group!\n\nAs a member, you'll:\n• Get priority matching with other trusted members\n• Be discoverable by new members seeking connections like you\n• Help grow our trusted network\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification.";
+
+          // Create special match record to track that this user was invited to join
+          const invitationMatchRecord = {
+            entityId: message.entityId,
+            agentId: runtime.agentId,
+            roomId: message.roomId,
+            content: {
+              text: `User ${message.entityId} was invited to join Paren's Circles group - no matches available`,
+              type: 'match_record',
+              user1Id: message.entityId, // The invited user
+              user2Id: runtime.agentId, // Use agent ID as placeholder for invitations
+              compatibilityScore: 0,
+              reasoning: 'No matches found - invited to join group to expand opportunities',
+              status: 'invitation_pending', // Special status for invitations
+              invitationReason: 'no_match_found',
+              // Store both users' contexts (only user1 in this case)
+              user1PersonaContext: personaContext,
+              user1ConnectionContext: connectionContext,
+              user2PersonaContext: null,
+              user2ConnectionContext: null,
+              // Keep old fields for backward compatibility
+              personaContext,
+              connectionContext,
+            },
+            createdAt: Date.now(),
+          };
+
+          try {
+            await runtime.createMemory(invitationMatchRecord, 'matches');
+            logger.info(
+              `[discover-connection] Created invitation match record for user ${message.entityId} - no match found, invited to join group`
+            );
+          } catch (error) {
+            logger.error(
+              `[discover-connection] Failed to create invitation match record for user ${message.entityId}: ${error}`
+            );
+            // Continue anyway - don't break the user flow
+          }
+        } else {
+          // For existing members: standard no-match message
+          noMatchText =
+            trustedUserIds.size === 0
+              ? "There aren't any other trusted Circles members available for matching right now. Encourage others to join Paren's Circles group to expand the trusted matching pool!"
+              : "I couldn't find a compatible match among the current trusted Circles members, but I'll keep checking as more people join the group. I'll notify you when I find a suitable connection!";
+        }
 
         if (callback) {
           await callback({
@@ -388,9 +456,9 @@ export const createConnectionAction: Action = {
             actions: ['REPLY'],
           });
 
-          // Log no match message sent to user
+          // Log no match message sent to user with membership info
           logger.info(
-            `[discover-connection] MESSAGE_SENT_TO_USER: User ${message.entityId} received no match message: "${noMatchText.substring(0, 100)}${noMatchText.length > 100 ? '...' : ''}"`
+            `[discover-connection] MESSAGE_SENT_TO_USER: User ${message.entityId} (group member: ${isUserGroupMember}) received no match message: "${noMatchText.substring(0, 100)}${noMatchText.length > 100 ? '...' : ''}"`
           );
         }
 
@@ -401,7 +469,10 @@ export const createConnectionAction: Action = {
             personaContext,
             connectionContext,
             matchScore: 0,
-            reasoning: 'No potential matches found - need more users in the system',
+            reasoning: isUserGroupMember
+              ? 'No potential matches found among trusted Circles members - need more trusted users'
+              : 'No matches found - user invited to join group to expand opportunities',
+            isUserGroupMember,
           },
         };
       }
@@ -472,6 +543,37 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
         `[discover-connection] Connection analysis complete. ${bestMatch !== 'none' ? `Found compatible match with score: ${compatibilityScore}` : 'No suitable matches found'}`
       );
 
+      // Generate additional membership message if needed for non-group members with matches
+      let finalResponseText = responseText;
+
+      if (bestMatch && bestMatch !== 'none') {
+        // We already have isUserGroupMember from earlier check
+
+        // Only generate membership message for non-group members
+        if (!isUserGroupMember) {
+          logger.debug(`[discover-connection] Generating membership guidance for non-group member`);
+          // Generate membership guidance message for users not in Paren's group
+          const membershipPrompt = membershipStatusTemplate
+            .replace('{{userTrustStatus}}', 'not_trusted')
+            .replace('{{userContext}}', personaContext)
+            .replace('{{matchFound}}', 'true');
+
+          const membershipResponse = await runtime.useModel(ModelType.TEXT_LARGE, {
+            prompt: membershipPrompt,
+          });
+
+          const membershipParsed = parseKeyValueXml(membershipResponse);
+          if (membershipParsed && membershipParsed.membershipMessage.trim()) {
+            finalResponseText = responseText + '\n\n' + membershipParsed.membershipMessage;
+            logger.debug(`[discover-connection] Added membership guidance for non-group member`);
+          }
+        } else {
+          logger.debug(
+            `[discover-connection] Skipping membership message for existing group member`
+          );
+        }
+      }
+
       // Check for existing matches to prevent duplicates
       if (bestMatch && bestMatch !== 'none') {
         const matchedUserId = bestMatch as UUID;
@@ -491,15 +593,12 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
         });
 
         if (!duplicateMatch) {
-          // Check if user is already trusted to skip Circles onboarding
-          const userTrustService = new UserTrustStatusService(runtime);
-          const isUserTrusted = await userTrustService.isUserTrusted(message.entityId);
-
-          // Set appropriate status based on trust status
-          const matchStatus = isUserTrusted ? 'ready_for_introduction' : 'circles_onboarding';
+          // Use the trust status we already computed
+          // Set appropriate status based on group membership
+          const matchStatus = isUserGroupMember ? 'ready_for_introduction' : 'group_onboarding';
 
           logger.info(
-            `[discover-connection] User ${message.entityId} trust status: ${isUserTrusted}, setting match status: ${matchStatus}`
+            `[discover-connection] User ${message.entityId} group membership: ${isUserGroupMember}, setting match status: ${matchStatus}`
           );
 
           // Get matched user's contexts for proper storage
@@ -563,18 +662,18 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
 
       if (callback) {
         await callback({
-          text: responseText,
+          text: finalResponseText,
           actions: ['REPLY'],
         });
 
         // Log match result sent to user
         logger.info(
-          `[discover-connection] MESSAGE_SENT_TO_USER: User ${message.entityId} received match result: "${responseText.substring(0, 100)}${responseText.length > 100 ? '...' : ''}"`
+          `[discover-connection] MESSAGE_SENT_TO_USER: User ${message.entityId} received match result: "${finalResponseText.substring(0, 100)}${finalResponseText.length > 100 ? '...' : ''}"`
         );
       }
 
       return {
-        text: responseText,
+        text: finalResponseText,
         success: true,
         values: {
           personaContext,

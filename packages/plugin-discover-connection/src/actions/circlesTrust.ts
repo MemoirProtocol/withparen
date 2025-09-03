@@ -21,31 +21,45 @@ export const circlesTrustAction: Action = {
   name: 'CIRCLES_TRUST',
   description:
     "Handles wallet address collection and trust transaction to add user to Paren's Circles group before introduction",
-  similes: ['JOIN_CIRCLES', 'TRUST_WALLET', 'ADD_TO_GROUP', 'CIRCLES_MEMBERSHIP', 'WALLET_TRUST'],
+  similes: ['JOIN_GROUP', 'TRUST_WALLET', 'ADD_TO_GROUP'],
   examples: [] as ActionExample[][],
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
-      // Check if there are any matches with "circles_onboarding" status for this user
+      // Check if user is providing a wallet address first
+      const messageText = message.content.text?.toLowerCase() || '';
+      const hasWalletAddress = messageText.includes('0x') && messageText.length >= 40;
+
+      if (!hasWalletAddress) {
+        return false;
+      }
+
+      // Check for matches with "group_onboarding" status for this user
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
       });
 
-      // Find matches where this user is involved and status is "circles_onboarding"
-      const circlesOnboardingMatches = matches.filter((match) => {
+      const groupOnboardingMatches = matches.filter((match) => {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          matchData.status === 'circles_onboarding'
+          matchData.status === 'group_onboarding'
         );
       });
 
-      // Also check if user is providing a wallet address
-      const messageText = message.content.text?.toLowerCase() || '';
-      const hasWalletAddress = messageText.includes('0x') && messageText.length >= 40;
+      // Also check for invitation match records (stored as special matches with status 'invitation_pending')
+      const invitationMatches = matches.filter((match) => {
+        const matchData = match.content as any;
+        return (
+          matchData.user1Id === message.entityId &&
+          matchData.status === 'invitation_pending' &&
+          matchData.user2Id === runtime.agentId // Invitation matches use agent ID as placeholder
+        );
+      });
 
-      return circlesOnboardingMatches.length > 0 && hasWalletAddress;
+      // Valid if has group_onboarding match OR has invitation match OR wallet address provided
+      return groupOnboardingMatches.length > 0 || invitationMatches.length > 0;
     } catch (error) {
       logger.error(`[discover-connection] Error validating circles trust action: ${error}`);
       return false;
@@ -74,7 +88,27 @@ export const circlesTrustAction: Action = {
         // Get existing trust info
         const trustInfo = await userTrustService.getUserTrustInfo(message.entityId);
 
-        // Update match status from "circles_onboarding" to "ready_for_introduction"
+        // Ensure already-trusted users are properly recorded (in case they were trusted externally)
+        if (trustInfo) {
+          try {
+            await userTrustService.setUserTrusted(
+              message.entityId,
+              trustInfo.walletAddress,
+              trustInfo.trustTransactionHash,
+              trustInfo.circlesGroupCA
+            );
+            logger.info(
+              `[discover-connection] Ensured trust record exists for already-trusted user ${message.entityId}`
+            );
+          } catch (trustRecordError) {
+            logger.error(
+              `[discover-connection] Failed to ensure trust record for already-trusted user ${message.entityId}: ${trustRecordError}`
+            );
+            // Continue anyway - don't break the user flow
+          }
+        }
+
+        // Handle both match-based and invitation-based flows for already trusted users
         const matches = await runtime.getMemories({
           tableName: 'matches',
           count: 50,
@@ -84,11 +118,21 @@ export const circlesTrustAction: Action = {
           const matchData = match.content as any;
           return (
             (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-            matchData.status === 'circles_onboarding'
+            matchData.status === 'group_onboarding'
+          );
+        });
+
+        const invitationToUpdate = matches.find((match) => {
+          const matchData = match.content as any;
+          return (
+            matchData.user1Id === message.entityId &&
+            matchData.status === 'invitation_pending' &&
+            matchData.user2Id === runtime.agentId // Invitation matches use agent ID as placeholder
           );
         });
 
         if (matchToUpdate?.id) {
+          // Update match status from "group_onboarding" to "ready_for_introduction"
           const matchData = matchToUpdate.content as any;
           const updatedMatchContent = {
             ...matchData,
@@ -105,6 +149,26 @@ export const circlesTrustAction: Action = {
 
           logger.info(
             `[discover-connection] Updated match status to ready_for_introduction for already-trusted user ${message.entityId}`
+          );
+        } else if (invitationToUpdate?.id) {
+          // Update invitation match status to completed for already trusted user
+          const invitationData = invitationToUpdate.content as any;
+          const updatedInvitationContent = {
+            ...invitationData,
+            status: 'invitation_completed',
+            skipReason: 'already_trusted',
+            existingWallet: trustInfo?.walletAddress,
+            existingTrustHash: trustInfo?.trustTransactionHash,
+            completedAt: Date.now(),
+          };
+
+          await runtime.updateMemory({
+            id: invitationToUpdate.id,
+            content: updatedInvitationContent,
+          });
+
+          logger.info(
+            `[discover-connection] Updated invitation match status to completed for already-trusted user ${message.entityId}`
           );
         }
 
@@ -237,25 +301,59 @@ I'll send your introduction to your match right away!`;
           `[discover-connection] Successfully trusted wallet ${walletAddress} for user ${message.entityId}`
         );
 
-        // Update match status from "circles_onboarding" to "circles_trusted"
+        // Get Paren's Circles group CA from the service
+        const parenCirclesCA = circlesTrustService.getCirclesGroupAddress();
+
+        // Record user as trusted in the trust status service
+        const userTrustService = new UserTrustStatusService(runtime);
+        try {
+          await userTrustService.setUserTrusted(
+            message.entityId,
+            walletAddress,
+            trustResult.transactionHash!,
+            parenCirclesCA
+          );
+          logger.info(
+            `[discover-connection] Recorded user ${message.entityId} as trusted with wallet ${walletAddress}`
+          );
+        } catch (trustRecordError) {
+          logger.error(
+            `[discover-connection] Failed to record trust status for ${message.entityId}: ${trustRecordError}`
+          );
+          // Continue anyway - don't break the user flow
+        }
+
+        // Handle both match-based and invitation-based flows
         const matches = await runtime.getMemories({
           tableName: 'matches',
           count: 50,
         });
 
+        // Check for group_onboarding match
         const matchToUpdate = matches.find((match) => {
           const matchData = match.content as any;
           return (
             (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-            matchData.status === 'circles_onboarding'
+            matchData.status === 'group_onboarding'
+          );
+        });
+
+        // Check for invitation match (stored as special match with status 'invitation_pending')
+        const invitationToUpdate = matches.find((match) => {
+          const matchData = match.content as any;
+          return (
+            matchData.user1Id === message.entityId &&
+            matchData.status === 'invitation_pending' &&
+            matchData.user2Id === runtime.agentId // Invitation matches use agent ID as placeholder
           );
         });
 
         if (matchToUpdate?.id) {
+          // Update match status from "group_onboarding" to "group_joined"
           const matchData = matchToUpdate.content as any;
           const updatedMatchContent = {
             ...matchData,
-            status: 'circles_trusted',
+            status: 'group_joined',
             trustedWallet: walletAddress,
             trustTransactionHash: trustResult.transactionHash,
           };
@@ -266,12 +364,28 @@ I'll send your introduction to your match right away!`;
           });
 
           logger.info(
-            `[discover-connection] Updated match status to circles_trusted for user ${message.entityId}`
+            `[discover-connection] Updated match status to group_joined for user ${message.entityId}`
+          );
+        } else if (invitationToUpdate?.id) {
+          // Update invitation match status to completed for successful trust transaction
+          const invitationData = invitationToUpdate.content as any;
+          const updatedInvitationContent = {
+            ...invitationData,
+            status: 'invitation_completed',
+            trustedWallet: walletAddress,
+            trustTransactionHash: trustResult.transactionHash,
+            completedAt: Date.now(),
+          };
+
+          await runtime.updateMemory({
+            id: invitationToUpdate.id,
+            content: updatedInvitationContent,
+          });
+
+          logger.info(
+            `[discover-connection] Updated invitation match status to completed for user ${message.entityId}`
           );
         }
-
-        // Get Paren's Circles group CA from the service
-        const parenCirclesCA = circlesTrustService.getCirclesGroupAddress();
 
         const successText = `You are now member with Paren's Circles group!
 
@@ -321,7 +435,7 @@ You can choose to trust back my group, giving you access to DataDAO governance a
             walletAddress,
             trustTransactionHash: trustResult.transactionHash,
             parenCirclesCA,
-            status: 'circles_trusted',
+            status: 'group_joined',
           },
           data: {
             actionName: 'CIRCLES_TRUST',

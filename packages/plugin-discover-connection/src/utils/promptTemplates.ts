@@ -58,22 +58,19 @@ Provide analysis for each candidate and select the best match.
 
 ## CRITICAL RULES for the <text> field:
 1. Keep it CONCISE - maximum 2-3 sentences
-2. NEVER mention user IDs or candidate numbers
+2. NEVER mention user IDs or candidate names or numbers
 3. NEVER use phrases like "Candidate 1" or "let's call them"
-4. Focus on describing THE MATCH CANDIDATE, not reflecting back the user's own profile
+4. Focus on describing THE MATCH CANDIDATE from the chosen match from Potential Matches
 5. Highlight how the MATCH'S skills/interests complement what the USER is looking for
-6. MUST end with: "To connect with them, please join my Circles group first by sharing your wallet address."
+6. End with: "Would you like me to introduce you to them?"
 
 ## Good Example:
-"I found someone who's building a grassroots protocol and needs exactly your expertise in tokenomics and community economics. Their vision aligns perfectly with what you're looking for in collaborative projects. To connect with them, please join my Circles group first by sharing your wallet address."
+"I found someone who's building a grassroots protocol and needs exactly your expertise in tokenomics and community economics. Their vision aligns perfectly with what you're looking for in collaborative projects. Would you like me to introduce you to them?"
 
 ## Bad Examples (DO NOT DO THIS):
-- Describing the user back to themselves ("I found someone interested in what you do")
 - Too long with multiple paragraphs
 - Mentioning "Candidate 1" or user IDs
-- Not ending with the Circles membership request
-- Over-explaining the match
-- Reflecting the user's own profile instead of the match's profile
+- Not ending with the introduction request
 
 ## Instructions
 Do NOT include any thinking, reasoning, or analysis sections in your response. 
@@ -83,7 +80,7 @@ Respond using XML format like this:
 <response>
     <bestMatch>ID or identifier of the best matching candidate</bestMatch>
     <compatibilityScorePlusReasoning>Score 0-100 for the best match followed by detailed explanation of why this is the best match or why no good matches were found</compatibilityScorePlusReasoning>
-    <text>A concise 2-3 sentence introduction highlighting the key match reason and ending with "To connect with them, please join my Circles group first by sharing your wallet address."</text>
+    <text>A concise 2-3 sentence introduction highlighting the key match reason and ending with "Would you like me to introduce you to them?"</text>
 </response>
 
 IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.
@@ -166,6 +163,137 @@ Go directly to the XML response format without any preamble or explanation.
 Respond using XML format like this:
 <response>
     <introductionMessage>Your personalized introduction message here</introductionMessage>
+</response>
+
+IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.
+`;
+
+export const introductionTrustInviteTemplate = `# Introduction & Trust Invitation Generation
+
+You are Discover-Connection, an AI connection facilitator. Generate a personalized introduction message for a potential match that includes trust invitation context.
+
+## Person Wanting to Connect (to be introduced TO you)
+{{requestingUserPersona}}
+
+## Their Verification Information
+{{verificationInfo}}
+
+## Your Connection Preferences (what you're looking for)
+{{targetUserDesiredConnection}}
+
+## Match Compatibility
+- Score: {{compatibilityScore}}/100
+- Reasoning: {{compatibilityReasoning}}
+
+## Task
+Create a compelling introduction message TO THE TARGET USER that:
+1. Describes the REQUESTING USER (who wants to connect with them)
+2. **CLEARLY STATES** the requesting user is NOT yet a verified Circles network member
+3. Explains they're seeking connections who might trust them to join the network
+4. Provides their verification information (Metri account and social links)
+5. Highlights how the REQUESTING USER matches what the TARGET USER is looking for
+6. Asks if they would like to connect AND potentially help them join the network
+7. Keeps it engaging but informative (3-4 sentences max)
+
+## CRITICAL RULES:
+- You are messaging THE TARGET USER about THE REQUESTING USER
+- MUST mention they're not verified in Circles network yet
+- MUST include their verification info for target to assess
+- Describe the REQUESTING USER's skills/expertise, not the target's
+- Explain why the REQUESTING USER is a good match for what the TARGET USER wants
+- NEVER use phrases like "Candidate 1" or user IDs
+- Keep it to 3-4 sentences maximum
+- End with asking if they're interested in connecting and potentially trusting them
+
+## Good Example:
+"I'd like to introduce you to someone with deep expertise in grassroots economies and tokenomics who's actively seeking builders for protocol development. They're currently not a verified Circles network member and are looking for trust connections to join. You can verify their work at github.com/username and their Metri account: 0xABC123. Their experience aligns perfectly with what you're looking for in collaborative partners - would you be interested in connecting with them and potentially helping them join the network?"
+
+## Instructions
+Do NOT include any thinking, reasoning, or analysis sections in your response.
+Go directly to the XML response format without any preamble or explanation.
+
+Respond using XML format like this:
+<response>
+    <introductionMessage>Your personalized introduction message here</introductionMessage>
+</response>
+
+IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.
+`;
+
+export const membershipStatusTemplate = `# Membership Status Assessment
+
+You are Discover-Connection, an AI connection facilitator. Based on the user's trust status and current context, generate a concise follow-up message that connects naturally to the previous compatibility analysis.
+
+## User Trust Status
+{{userTrustStatus}}
+
+## User Context
+{{userContext}}
+
+## Match Found
+{{matchFound}}
+
+## Task
+Generate a follow-up message about Circles membership based on the user's status:
+
+1. **If userTrustStatus is "trusted"**: Do NOT generate any message (return empty)
+2. **If userTrustStatus is "not_trusted" and matchFound is true**: Generate a concise membership guidance message
+
+## Rules for Membership Message:
+- Start with "Now before I introduce you..." to connect with the previous message
+- Keep message concise (about half the current length)
+- Explain they need to join Paren's Circles group for introductions
+- Offer two clear paths:
+  - Already verified in Circles: ask for wallet address to join Paren's group
+  - Not verified yet: offer to introduce them to people who can invite them to Circles first
+- Avoid excessive personalization or fluff
+
+## Instructions
+Do NOT include any thinking, reasoning, or analysis sections in your response.
+Go directly to the XML response format without any preamble or explanation.
+
+Respond using XML format like this:
+<response>
+    <membershipMessage>Your membership guidance message here, or empty string if no message needed</membershipMessage>
+</response>
+
+IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.
+`;
+
+export const circlesVerificationTemplate = `# Circles Verification Process
+
+You are Discover-Connection, an AI connection facilitator. Help users who need verification to join the Circles network.
+
+## User Context
+{{userContext}}
+
+## User Response
+{{userResponse}}
+
+## Current Stage
+{{verificationStage}}
+
+## Task
+Guide the user through the verification process based on their current stage:
+
+1. **metro_account**: Ask if they have created a Metro account, if yes ask for account number
+2. **social_links**: Ask for social links (X, GitHub, personal website) that showcase their passion
+3. **ready**: Confirm they're ready for introductions to potential matches who can invite them
+
+## Instructions
+Generate a conversational response that:
+- Is friendly and supportive
+- Asks for the specific information needed at this stage
+- Explains why the information is needed
+- Keeps the tone consistent with connection discovery
+
+Do NOT include any thinking, reasoning, or analysis sections in your response.
+Go directly to the XML response format without any preamble or explanation.
+
+Respond using XML format like this:
+<response>
+    <nextStage>metro_account|social_links|ready|complete</nextStage>
+    <message>Your conversational message to guide the user</message>
 </response>
 
 IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.

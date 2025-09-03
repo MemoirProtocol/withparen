@@ -1435,7 +1435,7 @@ export const discoverConnectionPlugin: Plugin = {
   ],
   // this is jank, these events are not valid
   events: events as any as PluginEvents,
-  evaluators: [evaluators.reflectionEvaluator],
+  evaluators: [evaluators.reflectionEvaluator, evaluators.circlesVerificationEvaluator],
   providers: [
     providers.onboardingProvider,
     providers.anxietyProvider,
@@ -1443,6 +1443,7 @@ export const discoverConnectionPlugin: Plugin = {
     providers.roleProvider,
     providers.actionsProvider,
     providers.characterProvider,
+    providers.circlesVerificationProvider,
     providers.recentMessagesProvider,
     providers.matchStateProvider,
     providers.introductionStateProvider,

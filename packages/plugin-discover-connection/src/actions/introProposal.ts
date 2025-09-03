@@ -11,7 +11,10 @@ import {
   parseKeyValueXml,
 } from '@elizaos/core';
 
-import { introductionProposalTemplate } from '../utils/promptTemplates.js';
+import {
+  introductionProposalTemplate,
+  introductionTrustInviteTemplate,
+} from '../utils/promptTemplates.js';
 import { ProposalQuotaService } from '../services/proposalQuota.js';
 import { UserTrustStatusService } from '../services/userTrustStatus.js';
 
@@ -34,7 +37,7 @@ export const introProposalAction: Action = {
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
-      // Check if there are any matches with "circles_trusted" or "ready_for_introduction" status for this user
+      // Check if there are any matches with "group_joined", "ready_for_introduction", or "circles_verification_filled" status for this user
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
@@ -45,7 +48,9 @@ export const introProposalAction: Action = {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          (matchData.status === 'circles_trusted' || matchData.status === 'ready_for_introduction')
+          (matchData.status === 'group_joined' ||
+            matchData.status === 'ready_for_introduction' ||
+            matchData.status === 'circles_verification_filled')
         );
       });
 
@@ -142,7 +147,9 @@ export const introProposalAction: Action = {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          (matchData.status === 'circles_trusted' || matchData.status === 'ready_for_introduction')
+          (matchData.status === 'group_joined' ||
+            matchData.status === 'ready_for_introduction' ||
+            matchData.status === 'circles_verification_filled')
         );
       });
 
@@ -191,15 +198,66 @@ export const introProposalAction: Action = {
         ? matchData.user2ConnectionContext || 'Not specified'
         : matchData.user1ConnectionContext || matchData.connectionContext || 'Not specified';
 
-      // Generate personalized introduction message
-      const prompt = introductionProposalTemplate
-        .replace('{{requestingUserPersona}}', requestingPersonaContext || 'Not available')
-        .replace('{{targetUserDesiredConnection}}', targetConnectionContext || 'Not specified')
-        .replace('{{compatibilityScore}}', (matchData.compatibilityScore || 0).toString())
-        .replace(
-          '{{compatibilityReasoning}}',
-          matchData.reasoning || 'Good compatibility detected'
+      // Check if requesting user is a group member to determine which template to use
+      const isRequestingUserGroupMember = await userTrustService.isUserTrusted(requestingUserId);
+
+      let prompt: string;
+
+      if (isRequestingUserGroupMember) {
+        // User is already a group member - use standard introduction template
+        logger.debug(
+          `[discover-connection] Using standard introduction template for group member ${requestingUserId}`
         );
+        prompt = introductionProposalTemplate
+          .replace('{{requestingUserPersona}}', requestingPersonaContext || 'Not available')
+          .replace('{{targetUserDesiredConnection}}', targetConnectionContext || 'Not specified')
+          .replace('{{compatibilityScore}}', (matchData.compatibilityScore || 0).toString())
+          .replace(
+            '{{compatibilityReasoning}}',
+            matchData.reasoning || 'Good compatibility detected'
+          );
+      } else {
+        // User is not a group member - use trust invite template with verification data
+        logger.debug(
+          `[discover-connection] Using trust invite template for non-group member ${requestingUserId}`
+        );
+
+        // Fetch verification data for the requesting user
+        const verificationRecords = await runtime.getMemories({
+          tableName: 'circles_verification',
+          entityId: requestingUserId,
+          count: 1,
+        });
+
+        let verificationInfo = 'Verification information not available';
+
+        if (verificationRecords.length > 0) {
+          const verificationData = verificationRecords[0].content as any;
+          let verificationParts: string[] = [];
+
+          if (verificationData.metriAccount) {
+            verificationParts.push(`Metri Account: ${verificationData.metriAccount}`);
+          }
+
+          if (verificationData.socialLinks && verificationData.socialLinks.length > 0) {
+            verificationParts.push(`Social Links: ${verificationData.socialLinks.join(', ')}`);
+          }
+
+          if (verificationParts.length > 0) {
+            verificationInfo = verificationParts.join('\n');
+          }
+        }
+
+        prompt = introductionTrustInviteTemplate
+          .replace('{{requestingUserPersona}}', requestingPersonaContext || 'Not available')
+          .replace('{{verificationInfo}}', verificationInfo)
+          .replace('{{targetUserDesiredConnection}}', targetConnectionContext || 'Not specified')
+          .replace('{{compatibilityScore}}', (matchData.compatibilityScore || 0).toString())
+          .replace(
+            '{{compatibilityReasoning}}',
+            matchData.reasoning || 'Good compatibility detected'
+          );
+      }
 
       const response = await runtime.useModel(ModelType.TEXT_LARGE, {
         prompt,

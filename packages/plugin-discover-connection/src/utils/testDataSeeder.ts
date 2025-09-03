@@ -8,24 +8,48 @@
 import { type IAgentRuntime, type Memory, ModelType, logger } from '@elizaos/core';
 import { v4 as uuidv4 } from 'uuid';
 
+interface TestUser {
+  id: string;
+  name: string;
+  personaContext: string;
+  connectionContext: string;
+  tags: string[];
+  walletAddress: string;
+  trustTransactionHash: string;
+  metriAccount: string;
+  socialLinks: string[];
+}
+
 // Sample test users with diverse backgrounds for comprehensive testing
-export const TEST_USERS = [
+// These are existing group members who can be matched immediately
+export const TEST_USERS: TestUser[] = [
   {
-    id: uuidv4(),
+    id: '550e8400-e29b-41d4-a716-446655440001', // Fixed UUID for consistency
     name: 'Alex Chen',
     personaContext: `Alex is a blockchain engineer with 8 years of experience in distributed systems and smart contract development. He has worked at major Web3 companies including Ethereum Foundation and Polygon. Alex is passionate about decentralized data solutions, DAOs, and has extensive experience in Solidity, Rust, and Go. He actively contributes to open-source projects and has helped launch 3 successful DeFi protocols. Alex is currently looking to collaborate on innovative data infrastructure projects and enjoys mentoring other developers transitioning into Web3. He has deep expertise in consensus algorithms, cryptographic protocols, and scalable blockchain architecture.`,
+    connectionContext: `Alex is seeking technical co-founders and senior blockchain developers who share his passion for decentralized data infrastructure. He's particularly interested in connecting with entrepreneurs and product leaders who have experience scaling Web3 products, as well as researchers working on privacy-preserving technologies and zero-knowledge proofs. Alex values collaborators who understand both the technical complexities and business potential of blockchain technology, and who can help him build the next generation of decentralized data solutions.`,
     tags: ['blockchain', 'engineering', 'smart-contracts', 'web3', 'mentoring', 'defi'],
+    walletAddress: '0x1234567890123456789012345678901234567890',
+    trustTransactionHash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+    metriAccount: '0x4A6F78E1C2D3B4A5E6F78901234567890ABCDEF1',
+    socialLinks: ['https://github.com/alexchen-dev', 'https://twitter.com/alexchen_web3'],
   },
   {
-    id: uuidv4(),
+    id: '550e8400-e29b-41d4-a716-446655440002', // Fixed UUID for consistency
     name: 'Sarah Martinez',
     personaContext: `Sarah is a community builder and growth strategist who has helped scale Web3 communities from 0 to 100K+ members. She has experience working with major blockchain projects including Chainlink, Aave, and The Graph Protocol. Sarah specializes in tokenomics design, governance frameworks, and building engaged developer ecosystems. She has organized over 50 blockchain events, managed ambassador programs across 25+ countries, and has deep expertise in DAO governance structures. Sarah is passionate about decentralized technologies and connecting builders with the right resources and communities to succeed.`,
+    connectionContext: `Sarah is looking to connect with technical founders, protocol developers, and community leaders who are building innovative Web3 infrastructure. She's especially interested in meeting developers working on DAO tooling, governance systems, and community-driven protocols. Sarah seeks collaborators who understand the importance of user experience and community engagement in driving adoption of decentralized technologies. She's also eager to connect with other growth professionals and marketing strategists who can help scale emerging blockchain projects.`,
     tags: ['community-building', 'web3', 'governance', 'events', 'growth', 'dao'],
+    walletAddress: '0x2345678901234567890123456789012345678901',
+    trustTransactionHash: '0xbcdef12345678901bcdef12345678901bcdef12345678901bcdef12345678901',
+    metriAccount: '0x5B7F89E2D3F4C5B6F7890123456789012BCDEF23',
+    socialLinks: ['https://twitter.com/sarahm_community', 'https://linkedin.com/in/sarahmartinez'],
   },
   {
-    id: uuidv4(),
+    id: '550e8400-e29b-41d4-a716-446655440003', // Fixed UUID for consistency
     name: 'Marcus Johnson',
     personaContext: `Marcus is a seasoned product manager and tech entrepreneur with experience at both Fortune 500 companies and Web3 startups. He has launched 4 successful tech products and raised over $15M in venture funding. Marcus has deep expertise in data analytics, machine learning pipelines, and building data-driven products at scale. He's particularly interested in the intersection of AI and blockchain, and has been exploring decentralized data marketplaces. Marcus is actively looking for technical co-founders and engineering talent for his next venture in the decentralized data space.`,
+    connectionContext: `Marcus is seeking experienced blockchain engineers, AI researchers, and data scientists who are interested in building the future of decentralized data infrastructure. He's particularly looking for technical co-founders with expertise in distributed systems, machine learning, and cryptographic protocols. Marcus values partners who have experience bringing complex technical products to market and understand the challenges of building in the Web3 space. He's also interested in connecting with other entrepreneurs, investors, and advisors who can provide strategic guidance for scaling data-focused blockchain ventures.`,
     tags: [
       'product-management',
       'entrepreneur',
@@ -34,50 +58,10 @@ export const TEST_USERS = [
       'co-founder',
       'funding',
     ],
-  },
-  {
-    id: uuidv4(),
-    name: 'Dr. Emily Wang',
-    personaContext: `Emily is a data scientist and researcher with a PhD in Computer Science from Stanford, specializing in distributed systems and privacy-preserving technologies. She has published 25+ papers on decentralized data systems, zero-knowledge proofs, and blockchain scalability. Emily has worked at Google Research and Microsoft Research before transitioning to Web3. She's passionate about building privacy-first data solutions and has expertise in cryptographic protocols, federated learning, and decentralized identity systems. Emily is looking for innovative projects where she can apply her research to real-world decentralized applications.`,
-    tags: [
-      'data-science',
-      'research',
-      'privacy',
-      'zero-knowledge',
-      'distributed-systems',
-      'academia',
-    ],
-  },
-  {
-    id: uuidv4(),
-    name: 'David Kim',
-    personaContext: `David is a full-stack developer and DevRel engineer with 6 years of experience in blockchain development. He has built developer tools, APIs, and SDKs for major DeFi protocols. David is passionate about developer experience, documentation, and making Web3 accessible to traditional developers. He has extensive experience in TypeScript, Python, and Solidity, and has contributed to major open-source projects including Hardhat and OpenZeppelin. David is currently looking for opportunities to help early-stage protocols build their developer ecosystems and technical communities.`,
-    tags: ['full-stack', 'devrel', 'developer-tools', 'apis', 'typescript', 'open-source'],
-  },
-  {
-    id: uuidv4(),
-    name: 'Lisa Thompson',
-    personaContext: `Lisa is a venture capital associate at a top-tier Web3 fund, focusing on infrastructure and data-layer investments. She has evaluated over 200 blockchain startups and has deep expertise in tokenomics, protocol design, and market analysis. Lisa has an MBA from Wharton and previously worked in traditional VC before transitioning to crypto. She's particularly interested in decentralized data solutions, privacy tech, and developer infrastructure. Lisa actively mentors founders and connects promising projects with the right investors, partners, and technical talent.`,
-    tags: ['venture-capital', 'investments', 'infrastructure', 'tokenomics', 'mentoring', 'mba'],
-  },
-  {
-    id: uuidv4(),
-    name: 'Roberto Silva',
-    personaContext: `Roberto is a technical writer and content strategist specializing in Web3 and blockchain technologies. He has created technical documentation, whitepapers, and educational content for over 20 blockchain projects. Roberto has a background in computer science and is skilled at translating complex technical concepts into accessible content. He's passionate about Web3 education and has helped numerous projects build their thought leadership through high-quality content. Roberto is looking for innovative protocols to partner with on content strategy and developer education initiatives.`,
-    tags: [
-      'technical-writing',
-      'content-strategy',
-      'documentation',
-      'education',
-      'whitepapers',
-      'thought-leadership',
-    ],
-  },
-  {
-    id: uuidv4(),
-    name: 'Jennifer Park',
-    personaContext: `Jennifer is a UX/UI designer with 7 years of experience designing Web3 applications and developer tools. She has worked with major DeFi protocols to create intuitive user interfaces and improve user adoption. Jennifer has expertise in user research, design systems, and accessibility in blockchain applications. She's passionate about making decentralized technologies more user-friendly and has led design for 3 successful product launches that achieved 100K+ users. Jennifer is interested in collaborating with early-stage protocols on product design and user experience strategy.`,
-    tags: ['ux-ui', 'design', 'user-research', 'accessibility', 'product-design', 'user-adoption'],
+    walletAddress: '0x3456789012345678901234567890123456789012',
+    trustTransactionHash: '0xcdef123456789012cdef123456789012cdef123456789012cdef123456789012',
+    metriAccount: '0x6C8F9AE3F4F5D6C7F890123456789013CDEF345',
+    socialLinks: ['https://linkedin.com/in/marcusj-product', 'https://medium.com/@marcusjohnson'],
   },
 ];
 
@@ -95,7 +79,7 @@ export async function seedDiscoverConnectionTestData(
 ): Promise<Memory[]> {
   const {
     roomId = options.roomId, // Will be set per user below
-    worldId = '00000000-0000-0000-0000-000000000000', // All zeros UUID as requested
+    worldId = '00000000-0000-0000-0000-000000000000' as `${string}-${string}-${string}-${string}-${string}`, // All zeros UUID as requested
     skipIfExists = true,
     userCount = TEST_USERS.length,
   } = options;
@@ -111,14 +95,14 @@ export async function seedDiscoverConnectionTestData(
       try {
         // Check for existing test data specifically by looking for more records
         const existing = await runtime.getMemories({
-          tableName: 'persona_contexts',
-          roomId,
-          count: userCount, // Get the number we want to create
+          tableName: 'messages',
+          roomId: roomId as `${string}-${string}-${string}-${string}-${string}`,
+          count: userCount * 4, // Get enough to check for all record types (persona, connection, trust, verification)
         });
 
         // Filter for test data specifically (if metadata is available)
         const testDataMemories = existing.filter(
-          (memory) => memory.content?.metadata?.isTestData === true
+          (memory) => (memory.content?.metadata as any)?.isTestData === true
         );
 
         if (testDataMemories.length >= userCount) {
@@ -147,7 +131,7 @@ export async function seedDiscoverConnectionTestData(
 
       try {
         // Use entityId as roomId for test users as requested
-        const userRoomId = user.id; // Same as entityId for test users
+        const userRoomId = user.id as `${string}-${string}-${string}-${string}-${string}`; // Same as entityId for test users
 
         logger.debug(`[discover-connection] Creating persona context for ${user.name}...`);
         logger.debug(`[discover-connection]   - Entity ID: ${user.id}`);
@@ -157,13 +141,13 @@ export async function seedDiscoverConnectionTestData(
           `[discover-connection]   - Context length: ${user.personaContext.length} characters`
         );
 
-        // Create memory with proper UUID formats
+        // Create memory with proper UUID formats (using agent as entity to avoid permission issues)
         const memory = {
-          id: uuidv4(),
-          entityId: user.id,
+          id: uuidv4() as `${string}-${string}-${string}-${string}-${string}`,
+          entityId: runtime.agentId, // Use agent ID to avoid entity permission issues
           agentId: runtime.agentId,
-          roomId: userRoomId, // Use entityId as roomId for test users
-          worldId, // All zeros UUID
+          roomId: userRoomId, // Use user.id as roomId for test profile separation
+          worldId: worldId as `${string}-${string}-${string}-${string}-${string}`, // All zeros UUID
           content: {
             text: user.personaContext,
             type: 'persona_context',
@@ -171,6 +155,7 @@ export async function seedDiscoverConnectionTestData(
               name: user.name,
               tags: user.tags,
               isTestData: true,
+              testUserId: user.id, // Store original test user ID for identification
             },
           },
           createdAt: Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000, // Random time in last 7 days
@@ -193,10 +178,8 @@ export async function seedDiscoverConnectionTestData(
         );
 
         // Now create memory with embedding (this stores both memory and embedding in database)
-        logger.debug(
-          `[discover-connection] Storing memory with embedding in persona_contexts table...`
-        );
-        const memoryId = await runtime.createMemory(memoryWithEmbedding, 'persona_contexts', true);
+        logger.debug(`[discover-connection] Storing memory with embedding in memories table...`);
+        const memoryId = await runtime.createMemory(memoryWithEmbedding, 'messages');
 
         // Retrieve the final created memory
         const createdMemory = await runtime.getMemoryById(memoryId);
@@ -224,6 +207,91 @@ export async function seedDiscoverConnectionTestData(
         );
 
         createdMemories.push(createdMemory);
+
+        // Create connection context for the user
+        logger.debug(`[discover-connection] Creating connection context for ${user.name}...`);
+        const connectionContextMemory = {
+          id: uuidv4() as `${string}-${string}-${string}-${string}-${string}`,
+          entityId: runtime.agentId, // Use agent ID to avoid entity permission issues
+          agentId: runtime.agentId,
+          roomId: userRoomId,
+          worldId: worldId as `${string}-${string}-${string}-${string}-${string}`,
+          content: {
+            text: user.connectionContext,
+            type: 'connection_context',
+            metadata: {
+              name: user.name,
+              isTestData: true,
+              testUserId: user.id, // Store original test user ID for identification
+            },
+          },
+          createdAt: Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000,
+        };
+
+        const connectionMemoryWithEmbedding =
+          await runtime.addEmbeddingToMemory(connectionContextMemory);
+        const connectionMemoryId = await runtime.createMemory(
+          connectionMemoryWithEmbedding,
+          'messages'
+        );
+        logger.debug(
+          `[discover-connection] ✅ Created connection context for ${user.name} with ID: ${connectionMemoryId}`
+        );
+
+        // Create user trust status record (marks them as group member)
+        logger.debug(`[discover-connection] Creating user trust status for ${user.name}...`);
+        const trustStatusMemory = {
+          entityId: runtime.agentId, // Use agent ID to avoid entity permission issues
+          agentId: runtime.agentId,
+          roomId: userRoomId,
+          content: {
+            userId: user.id, // Keep original user ID in content for reference
+            walletAddress: user.walletAddress,
+            trustTransactionHash: user.trustTransactionHash,
+            trustedAt: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000, // Trusted in last 30 days
+            circlesGroupCA: '0x742d35Cc6634C0532925a3b8D6C6c3b8c4EF1234', // Sample Circles group contract
+            type: 'user_trust_status',
+            text: `User ${user.id} trusted with wallet ${user.walletAddress} at ${new Date().toISOString()}`,
+            metadata: {
+              name: user.name,
+              isTestData: true,
+              testUserId: user.id, // Store original test user ID for identification
+            },
+          },
+          createdAt: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000,
+        };
+
+        const trustMemoryId = await runtime.createMemory(trustStatusMemory, 'messages');
+        logger.debug(
+          `[discover-connection] ✅ Created user trust status for ${user.name} with ID: ${trustMemoryId}`
+        );
+
+        // Create circles verification record (completed state)
+        logger.debug(`[discover-connection] Creating circles verification for ${user.name}...`);
+        const verificationMemory = {
+          entityId: runtime.agentId, // Use agent ID to avoid entity permission issues
+          agentId: runtime.agentId,
+          roomId: userRoomId,
+          content: {
+            metriAccount: user.metriAccount,
+            socialLinks: user.socialLinks,
+            stage: 'complete',
+            lastUpdated: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000,
+            type: 'circles_verification',
+            text: `Verification stage: complete`,
+            metadata: {
+              name: user.name,
+              isTestData: true,
+              testUserId: user.id, // Store original test user ID for identification
+            },
+          },
+          createdAt: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000,
+        };
+
+        const verificationMemoryId = await runtime.createMemory(verificationMemory, 'messages');
+        logger.debug(
+          `[discover-connection] ✅ Created circles verification for ${user.name} with ID: ${verificationMemoryId}`
+        );
       } catch (error) {
         logger.error(`[discover-connection] Failed to create data for ${user.name}: ${error}`);
         continue; // Continue with other users even if one fails
@@ -277,7 +345,7 @@ export async function cleanupDiscoverConnectionTestData(
     );
     logger.info(`[discover-connection] To manually clean test data:`);
     logger.info(
-      `[discover-connection]   1. Check persona_contexts table for entries with metadata.isTestData = true`
+      `[discover-connection]   1. Check memories table for entries with metadata.isTestData = true`
     );
     logger.info(`[discover-connection]   2. Remove corresponding embeddings and memories`);
   } catch (error) {

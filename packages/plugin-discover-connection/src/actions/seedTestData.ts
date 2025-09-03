@@ -90,18 +90,24 @@ export const seedTestDataAction: Action = {
         const seededMemories = await seedDiscoverConnectionTestData(runtime, {
           roomId: message.roomId,
           skipIfExists: !isForceReseed, // Skip if exists unless forcing reseed
-          userCount: 8, // All test users
+          userCount: 3, // 3 diverse test users ready for matching
         });
 
-        const successText = `🎉 Successfully seeded test data! Created ${seededMemories.length} sample users with persona contexts and embeddings.
+        const successText = `🎉 Successfully seeded test data! Created ${seededMemories.length} group members ready for matching.
+
+All test users are already verified group members with:
+• Persona contexts for matching
+• Connection contexts for preferences
+• User trust status (group membership)
+• Completed Circles verification
 
 Now you can test connection discovery with queries like:
 • "Find me blockchain engineers for my datadao"
 • "I need community builders with Web3 experience" 
 • "Looking for technical co-founders"
-• "Connect me with VCs interested in data infrastructure"
+• "Connect me with data infrastructure experts"
 
-The vector search should now find relevant matches from the sample users!`;
+The matching system should find relevant connections immediately!`;
 
         if (callback) {
           await callback({
