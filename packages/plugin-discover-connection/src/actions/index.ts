@@ -1,6 +1,5 @@
 export { findMatchAction } from './findMatch';
-export { circlesTrustAction } from './circlesTrust';
-export { circlesVerificationAction } from './circlesVerification';
+export { joinGroupAction } from './joinGroup';
 export { introProposalAction } from './introProposal';
 export { introAcceptAction } from './introAccept';
 export { passMessageAction } from './passMessage';

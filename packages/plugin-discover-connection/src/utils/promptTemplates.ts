@@ -220,46 +220,6 @@ Respond using XML format like this:
 IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.
 `;
 
-export const membershipStatusTemplate = `# Membership Status Assessment
-
-You are Discover-Connection, an AI connection facilitator. Based on the user's trust status and current context, generate a concise follow-up message that connects naturally to the previous compatibility analysis.
-
-## User Trust Status
-{{userTrustStatus}}
-
-## User Context
-{{userContext}}
-
-## Match Found
-{{matchFound}}
-
-## Task
-Generate a follow-up message about Circles membership based on the user's status:
-
-1. **If userTrustStatus is "trusted"**: Do NOT generate any message (return empty)
-2. **If userTrustStatus is "not_trusted" and matchFound is true**: Generate a concise membership guidance message
-
-## Rules for Membership Message:
-- Start with "Now before I introduce you..." to connect with the previous message
-- Keep message concise (about half the current length)
-- Explain they need to join Paren's Circles group for introductions
-- Offer two clear paths:
-  - Already verified in Circles: ask for wallet address to join Paren's group
-  - Not verified yet: offer to introduce them to people who can invite them to Circles first
-- Avoid excessive personalization or fluff
-
-## Instructions
-Do NOT include any thinking, reasoning, or analysis sections in your response.
-Go directly to the XML response format without any preamble or explanation.
-
-Respond using XML format like this:
-<response>
-    <membershipMessage>Your membership guidance message here, or empty string if no message needed</membershipMessage>
-</response>
-
-IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.
-`;
-
 export const circlesVerificationExtractionTemplate = `# Circles Verification Data Extraction
 
 You are Discover-Connection, an AI connection facilitator. Extract verification information from user conversations.
@@ -273,7 +233,7 @@ You are Discover-Connection, an AI connection facilitator. Extract verification 
 ## Task
 Analyze the recent conversation and extract any Circles network verification information provided by the user. Look for:
 
-1. **Metri Account**: Wallet addresses, metri accounts, or any account identifiers
+1. **Metri Account**: Wallet addresses, metri accounts, or any account identifiers. 
    - Ethereum addresses starting with 0x
    - Mentions of "metri", "account", "wallet", "address"
    - Any alphanumeric strings that could be account identifiers
@@ -287,8 +247,10 @@ Analyze the recent conversation and extract any Circles network verification inf
 ## Instructions
 Extract verification data from the conversation. Only include NEW information not already in the existing data. If no new verification info is found, return empty fields.
 
+**CRITICAL**: Only extract ACTUAL verification information provided by the user. Do NOT output placeholder text like "Not provided", "None provided", or similar. If the user hasn't provided specific information, leave the field empty.
+
 Determine if we have minimum viable information:
-- At least one identifier (metri account, wallet, or clear account reference)
+- At least one identifier (metri account, wallet address)
 - At least one social link or profile
 
 Do NOT include any thinking, reasoning, or analysis sections in your response.
@@ -296,8 +258,8 @@ Go directly to the XML response format without any preamble or explanation.
 
 Respond using XML format like this:
 <response>
-    <metriAccount>extracted account/wallet address if found</metriAccount>
-    <socialLinks>comma-separated list of social links/profiles found</socialLinks>
+    <metriAccount>extracted account/wallet address if found, otherwise leave empty</metriAccount>
+    <socialLinks>comma-separated list of social links/profiles found, otherwise leave empty</socialLinks>
     <hasMinimumInfo>true|false</hasMinimumInfo>
     <extractionReason>brief explanation of what was found or why minimum threshold was/wasn't met</extractionReason>
 </response>

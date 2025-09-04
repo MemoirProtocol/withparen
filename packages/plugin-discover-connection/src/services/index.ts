@@ -4,3 +4,4 @@ export * from './circlesWallet';
 export * from './circlesTrust';
 export * from './userTrustStatus';
 export * from './proposalQuota';
+export * from './userStatusService';

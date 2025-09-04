@@ -9,6 +9,9 @@ import {
   logger,
 } from '@elizaos/core';
 
+import { MatchStatus } from '../services/userStatusService.js';
+import { getUserInfo } from '../utils/userUtils.js';
+
 /**
  * Introduction Accept/Decline Action for Discover-Connection
  * Handles responses to introduction proposals
@@ -27,38 +30,26 @@ export const introAcceptAction: Action = {
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
-      // Check if there are any matches with "introduction_incoming" status for this user
+      // Check if user has matches with PROPOSAL_PENDING status where they are NOT the initiator
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
       });
 
-      // Find matches where this user has incoming introductions
-      const incomingIntroductions = matches.filter((match) => {
+      const pendingProposals = matches.filter((match) => {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          matchData.status === 'introduction_incoming'
+          matchData.status === MatchStatus.PROPOSAL_PENDING &&
+          matchData.proposalInitiator !== message.entityId // User is NOT the one who initiated
         );
       });
 
-      // Check if user is responding to an introduction in their message
-      const messageText = message.content.text?.toLowerCase() || '';
-      const responseKeywords = [
-        'yes',
-        'no',
-        'accept',
-        'decline',
-        'sure',
-        'not interested',
-        'sounds good',
-        'connect',
-      ];
-      const hasIntroductionResponse = responseKeywords.some((keyword) =>
-        messageText.includes(keyword)
-      );
+      if (pendingProposals.length === 0) {
+        return false;
+      }
 
-      return incomingIntroductions.length > 0 && hasIntroductionResponse;
+      return true;
     } catch (error) {
       logger.error(`[discover-connection] Error validating intro accept action: ${error}`);
       return false;
@@ -77,21 +68,22 @@ export const introAcceptAction: Action = {
         `[discover-connection] Processing introduction response from user ${message.entityId}`
       );
 
-      // Get matches with "introduction_incoming" status for this user
+      // Get matches with PROPOSAL_PENDING status where this user is NOT the initiator
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
       });
 
-      const incomingIntroductions = matches.filter((match) => {
+      const pendingProposals = matches.filter((match) => {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          matchData.status === 'introduction_incoming'
+          matchData.status === MatchStatus.PROPOSAL_PENDING &&
+          matchData.proposalInitiator !== message.entityId // User is NOT the initiator
         );
       });
 
-      if (incomingIntroductions.length === 0) {
+      if (pendingProposals.length === 0) {
         const noIntroText =
           "I don't see any pending introduction requests for you right now. Would you like me to search for new connections?";
 
@@ -109,8 +101,8 @@ export const introAcceptAction: Action = {
         };
       }
 
-      // Process the most recent introduction
-      const introToProcess = incomingIntroductions[0];
+      // Process the most recent proposal
+      const introToProcess = pendingProposals[0];
       const introData = introToProcess.content as any;
 
       // Determine the other user in this match
@@ -160,18 +152,12 @@ export const introAcceptAction: Action = {
         // Both users accepted - make the connection!
 
         // Get other user's information for the connection message
-        const otherUserEntity = await runtime.getEntityById(otherUserId);
+        const otherUserInfo = await getUserInfo(runtime, otherUserId);
+        const otherUserDisplayName = otherUserInfo.displayName;
+        const otherUserUsername = otherUserInfo.username;
 
-        // Extract display name and username separately
-        const otherUserDisplayName =
-          otherUserEntity?.metadata?.name ||
-          otherUserEntity?.metadata?.username ||
-          `User${otherUserId}`;
-
-        const otherUserUsername = otherUserEntity?.metadata?.username;
-
-        // Update status to connected
-        newStatus = 'connected';
+        // Update status to accepted, then connected
+        newStatus = MatchStatus.ACCEPTED;
 
         // Construct response with proper name and @username format
         if (otherUserUsername) {
@@ -184,15 +170,9 @@ export const introAcceptAction: Action = {
         // Send success message to the original requesting user
         try {
           // Get the accepting user's info for the message
-          const acceptingUserEntity = await runtime.getEntityById(respondingUserId);
-
-          // Extract display name and username separately
-          const acceptingUserDisplayName =
-            acceptingUserEntity?.metadata?.name ||
-            acceptingUserEntity?.metadata?.username ||
-            `User${respondingUserId}`;
-
-          const acceptingUserUsername = acceptingUserEntity?.metadata?.username;
+          const acceptingUserInfo = await getUserInfo(runtime, respondingUserId);
+          const acceptingUserDisplayName = acceptingUserInfo.displayName;
+          const acceptingUserUsername = acceptingUserInfo.username;
 
           // Find the original user's room to send them the good news
           const originalUserRooms = await runtime.getMemories({
@@ -270,44 +250,48 @@ export const introAcceptAction: Action = {
           // Continue with the workflow even if message delivery fails
         }
 
-        // Find and update the corresponding match record for the other user
-        const otherUserMatches = await runtime.getMemories({
+        // Find and update ALL match records for this connection to ACCEPTED -> CONNECTED
+        const allMatches = await runtime.getMemories({
           tableName: 'matches',
-          count: 50,
+          count: 100,
         });
 
-        const otherUserMatch = otherUserMatches.find((match) => {
+        const relatedMatches = allMatches.filter((match) => {
           const matchData = match.content as any;
           return (
-            (matchData.user1Id === otherUserId || matchData.user2Id === otherUserId) &&
-            (matchData.user1Id === respondingUserId || matchData.user2Id === respondingUserId) &&
-            matchData.status === 'introduction_outgoing'
+            ((matchData.user1Id === otherUserId && matchData.user2Id === respondingUserId) ||
+              (matchData.user1Id === respondingUserId && matchData.user2Id === otherUserId)) &&
+            matchData.status === MatchStatus.PROPOSAL_PENDING
           );
         });
 
-        if (otherUserMatch && otherUserMatch.id) {
-          const updatedOtherMatchContent = {
-            ...otherUserMatch.content,
-            status: 'connected',
-          };
+        // Update all related match records to CONNECTED
+        for (const match of relatedMatches) {
+          if (match.id) {
+            const updatedMatchContent = {
+              ...match.content,
+              status: MatchStatus.CONNECTED,
+              connectedAt: Date.now(),
+            };
 
-          await runtime.updateMemory({
-            id: otherUserMatch.id,
-            content: updatedOtherMatchContent,
-          });
+            await runtime.updateMemory({
+              id: match.id,
+              content: updatedMatchContent,
+            });
 
-          logger.info(
-            `[discover-connection] Updated other user's match status to connected: ${otherUserId}`
-          );
+            logger.info(
+              `[discover-connection] Updated match ${match.id} status to CONNECTED`
+            );
+          }
         }
       } else {
         // User declined the introduction
-        newStatus = 'declined';
+        newStatus = MatchStatus.DECLINED;
         responseText =
           "No problem at all! Not every connection is the right fit, and that's perfectly okay. I'll keep looking for other potential matches that might be more aligned with what you're seeking. Thanks for letting me know!";
       }
 
-      // Update the introduction status
+      // Update the match status for the responding user's record
       if (introToProcess.id) {
         const updatedIntroContent = {
           ...introData,

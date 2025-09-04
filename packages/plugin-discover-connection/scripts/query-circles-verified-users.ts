@@ -59,6 +59,7 @@ interface VerifiedUser {
   incomingTrustCount: number;
   outgoingTrustCount: number;
   isVerified: boolean;
+  status: 'verified' | 'unverified';
   trustVerificationTime?: number;
 }
 
@@ -96,7 +97,7 @@ class CirclesVerifiedUsersQuery {
     for (const { namespace, table } of tablesToTry) {
       try {
         console.log(`📋 Trying ${namespace}.${table}...`);
-        
+
         const queryRequest: CirclesQueryRequest = {
           Namespace: namespace,
           Table: table,
@@ -111,16 +112,16 @@ class CirclesVerifiedUsersQuery {
 
         const result = (response as any)?.result || response;
         const rows = result.rows || result.Rows || [];
-        
+
         console.log(`   📊 Found ${rows.length} records`);
-        
+
         if (rows.length > 0) {
           console.log('   📝 Sample record:', JSON.stringify(rows[0], null, 2));
           console.log('   🏷️ Available columns:', result.columns || result.Columns);
         }
-        
+
         console.log('');
-        
+
       } catch (error) {
         console.log(`   ❌ Error: ${error}\n`);
       }
@@ -206,12 +207,12 @@ class CirclesVerifiedUsersQuery {
   }
 
   /**
-   * Query registered users and add trust verification data
+   * Query all users and add trust verification data
    */
-  async queryRegisteredUsersWithTrustData(limit = 500, cursor?: PaginationCursor): Promise<{ users: VerifiedUser[], nextCursor?: PaginationCursor }> {
+  async queryRegisteredUsersWithTrustData(limit = 1000, cursor?: PaginationCursor): Promise<{ users: VerifiedUser[], nextCursor?: PaginationCursor }> {
     try {
       const cursorInfo = cursor ? `after block ${cursor.blockNumber}:${cursor.transactionIndex}:${cursor.logIndex}` : 'from beginning';
-      console.log(`🔍 Querying registered users with trust verification (limit: ${limit}, ${cursorInfo})...`);
+      console.log(`🔍 Querying users with trust verification (limit: ${limit}, ${cursorInfo})...`);
 
       // Build filters
       const filters: FilterPredicate[] = [
@@ -284,17 +285,7 @@ class CirclesVerifiedUsersQuery {
       const queryRequest: CirclesQueryRequest = {
         Namespace: 'V_CrcV2',
         Table: 'Avatars',
-        Columns: [
-          'avatar',
-          'blockNumber',
-          'timestamp',
-          'transactionHash',
-          'transactionIndex',
-          'logIndex',
-          'type',
-          'name',
-          'invitedBy'
-        ],
+        Columns: [], // Request all columns to see what's available
         Filter: filters,
         Order: [
           {
@@ -325,19 +316,19 @@ class CirclesVerifiedUsersQuery {
 
       if (!rows || rows.length === 0) {
         console.log('⚠️ No registered users found');
-        return [];
+        return { users: [], nextCursor: undefined };
       }
 
-      console.log(`📋 Found ${rows.length} registered users, checking trust verification...`);
+      console.log(`📋 Found ${rows.length} users, checking trust verification...`);
 
       // Process each user and add trust data
       const usersWithTrustData: VerifiedUser[] = [];
       let nextCursor: PaginationCursor | undefined;
-      
+
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         let user: any = {};
-        
+
         if (Array.isArray(row)) {
           columns.forEach((column: string, index: number) => {
             user[column] = row[index];
@@ -348,7 +339,7 @@ class CirclesVerifiedUsersQuery {
 
         // Get trust counts for this user
         const trustCounts = await this.getTrustCounts(user.avatar);
-        
+
         // Create verified user object
         const verifiedUser: VerifiedUser = {
           avatar: user.avatar,
@@ -356,11 +347,12 @@ class CirclesVerifiedUsersQuery {
           timestamp: user.timestamp,
           transactionHash: user.transactionHash,
           human_register_time: user.timestamp,
-          name: user.name,
-          invitedBy: user.invitedBy,
+          name: user.name || null,
+          invitedBy: user.invitedBy || null,
           incomingTrustCount: trustCounts.incoming,
           outgoingTrustCount: trustCounts.outgoing,
           isVerified: trustCounts.incoming >= 3,
+          status: trustCounts.incoming >= 3 ? 'verified' : 'unverified',
           trustVerificationTime: user.timestamp // For now, use registration time
         };
 
@@ -383,10 +375,10 @@ class CirclesVerifiedUsersQuery {
       }
 
       const verifiedCount = usersWithTrustData.filter(u => u.isVerified).length;
-      console.log(`✅ Found ${verifiedCount} verified users out of ${usersWithTrustData.length} registered users`);
-      
-      return { 
-        users: usersWithTrustData, 
+      console.log(`✅ Found ${verifiedCount} verified users out of ${usersWithTrustData.length} total users`);
+
+      return {
+        users: usersWithTrustData,
         nextCursor: rows.length === limit ? nextCursor : undefined // Only return cursor if we got a full batch
       };
 
@@ -399,56 +391,57 @@ class CirclesVerifiedUsersQuery {
   /**
    * Query verified users from Circles RPC
    */
-  async queryVerifiedUsers(limit = 500, cursor?: PaginationCursor, verifiedOnly = true): Promise<{ users: VerifiedUser[], nextCursor?: PaginationCursor }> {
+  async queryVerifiedUsers(limit = 1000, cursor?: PaginationCursor, verifiedOnly = false): Promise<{ users: VerifiedUser[], nextCursor?: PaginationCursor }> {
     // Use the new trust verification method
     const result = await this.queryRegisteredUsersWithTrustData(limit, cursor);
-    
+
     if (verifiedOnly) {
       // Filter to only return verified users (3+ trust connections)
       const verifiedUsers = result.users.filter(user => user.isVerified);
-      console.log(`🔍 Filtered to ${verifiedUsers.length} verified users from ${result.users.length} registered users`);
+      console.log(`🔍 Filtered to ${verifiedUsers.length} verified users from ${result.users.length} total users`);
       return { users: verifiedUsers, nextCursor: result.nextCursor };
     }
-    
+
     return result;
   }
 
   /**
    * Query all verified users with pagination
    */
-  async queryAllVerifiedUsers(batchSize = 500, maxUsers = 2000, verifiedOnly = true): Promise<VerifiedUser[]> {
+  async queryAllVerifiedUsers(batchSize = 1000, maxUsers = Infinity, verifiedOnly = false): Promise<VerifiedUser[]> {
     const allUsers: VerifiedUser[] = [];
     let cursor: PaginationCursor | undefined;
     let hasMoreData = true;
     let consecutiveEmptyBatches = 0;
     const maxConsecutiveEmpty = 3;
 
-    console.log(`📊 Starting cursor-based paginated query (batch size: ${batchSize}, max users: ${maxUsers})`);
+    const maxUsersText = maxUsers === Infinity ? 'unlimited' : maxUsers.toString();
+    console.log(`📊 Starting cursor-based paginated query (batch size: ${batchSize}, max users: ${maxUsersText})`);
 
-    while (hasMoreData && allUsers.length < maxUsers) {
+    while (hasMoreData && (maxUsers === Infinity || allUsers.length < maxUsers)) {
       try {
         const result = await this.queryVerifiedUsers(batchSize, cursor, verifiedOnly);
         const users = result.users;
-        
+
         if (users.length === 0) {
           consecutiveEmptyBatches++;
           const cursorInfo = cursor ? `block ${cursor.blockNumber}:${cursor.transactionIndex}:${cursor.logIndex}` : 'beginning';
           console.log(`⚠️  Empty batch ${consecutiveEmptyBatches}/${maxConsecutiveEmpty} at ${cursorInfo}`);
-          
+
           if (consecutiveEmptyBatches >= maxConsecutiveEmpty) {
             console.log('🛑 Multiple empty batches detected, stopping pagination');
             hasMoreData = false;
           }
         } else {
           consecutiveEmptyBatches = 0; // Reset counter on successful batch
-          
+
           // Add deduplication based on avatar address
-          const newUsers = users.filter(user => 
+          const newUsers = users.filter(user =>
             !allUsers.some(existing => existing.avatar === user.avatar)
           );
-          
+
           allUsers.push(...newUsers);
-          
+
           if (newUsers.length !== users.length) {
             const duplicatePercent = ((users.length - newUsers.length) / users.length * 100).toFixed(1);
             console.log(`📈 Progress: ${allUsers.length} users collected (${users.length - newUsers.length} duplicates filtered - ${duplicatePercent}%)`);
@@ -464,16 +457,16 @@ class CirclesVerifiedUsersQuery {
             cursor = result.nextCursor;
           }
         }
-        
+
         // Safety check: if we've hit our max user limit, stop
-        if (allUsers.length >= maxUsers) {
+        if (maxUsers !== Infinity && allUsers.length >= maxUsers) {
           console.log(`🎯 Reached maximum user limit of ${maxUsers}`);
           hasMoreData = false;
         }
-        
+
         // Small delay to be respectful to the RPC endpoint
         await new Promise(resolve => setTimeout(resolve, 100));
-        
+
       } catch (error) {
         const cursorInfo = cursor ? `block ${cursor.blockNumber}:${cursor.transactionIndex}:${cursor.logIndex}` : 'beginning';
         console.error(`❌ Error at ${cursorInfo}:`, error);
@@ -487,33 +480,33 @@ class CirclesVerifiedUsersQuery {
     }
 
     console.log(`✅ Pagination complete. Total users collected: ${allUsers.length}`);
-    return allUsers.slice(0, maxUsers); // Ensure we don't exceed max users
+    return maxUsers === Infinity ? allUsers : allUsers.slice(0, maxUsers); // Ensure we don't exceed max users
   }
 
   /**
    * Get summary statistics
    */
   getSummaryStats(users: VerifiedUser[]) {
-    const totalUsers = users.length;
+    const totalRegisteredUsers = users.length; // All users are registered
     const verifiedUsers = users.filter(u => u.isVerified);
-    const registeredUsers = users.filter(u => !u.isVerified);
-    
-    const oldestRegistration = users.length > 0 ? 
+    const unverifiedUsers = users.filter(u => !u.isVerified);
+
+    const oldestRegistration = users.length > 0 ?
       Math.min(...users.map(u => u.timestamp)) : 0;
-    const newestRegistration = users.length > 0 ? 
+    const newestRegistration = users.length > 0 ?
       Math.max(...users.map(u => u.timestamp)) : 0;
 
     // Trust statistics
     const trustCounts = users.map(u => u.incomingTrustCount);
-    const avgTrustCount = trustCounts.length > 0 ? 
+    const avgTrustCount = trustCounts.length > 0 ?
       (trustCounts.reduce((a, b) => a + b, 0) / trustCounts.length).toFixed(2) : '0';
     const maxTrustCount = trustCounts.length > 0 ? Math.max(...trustCounts) : 0;
 
     return {
-      totalUsers,
+      totalRegisteredUsers,
       verifiedUsers: verifiedUsers.length,
-      registeredUsers: registeredUsers.length,
-      verificationRate: totalUsers > 0 ? ((verifiedUsers.length / totalUsers) * 100).toFixed(1) + '%' : '0%',
+      unverifiedUsers: unverifiedUsers.length,
+      verificationRate: totalRegisteredUsers > 0 ? ((verifiedUsers.length / totalRegisteredUsers) * 100).toFixed(1) + '%' : '0%',
       oldestRegistration: new Date(oldestRegistration * 1000).toISOString(),
       newestRegistration: new Date(newestRegistration * 1000).toISOString(),
       uniqueAddresses: new Set(users.map(u => u.avatar)).size,
@@ -547,14 +540,14 @@ class CirclesVerifiedUsersQuery {
  */
 async function main() {
   const args = process.argv.slice(2);
-  
+
   // Parse command line arguments
   let limit = 100;
   let outputFile = '';
   let queryAll = false;
   let exploreData = false;
-  let maxUsers = 2000;
-  let includeRegistered = false;
+  let maxUsers = Infinity;
+  let includeRegistered = true;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -573,11 +566,11 @@ async function main() {
         exploreData = true;
         break;
       case '--max-users':
-        maxUsers = parseInt(args[i + 1]) || 2000;
+        maxUsers = parseInt(args[i + 1]) || Infinity;
         i++;
         break;
-      case '--include-registered':
-        includeRegistered = true;
+      case '--verified-only':
+        includeRegistered = false;
         break;
       case '--help':
         console.log(`
@@ -589,16 +582,17 @@ Usage:
 Options:
   --limit <number>      Limit number of users to fetch (default: 100)
   --output <file>       Export results to JSON file
-  --all                 Query all users with pagination (default max: 2000)
-  --max-users <number>  Maximum users when using --all (default: 2000)
-  --include-registered  Include registered but unverified users in results
+  --all                 Query all users with pagination until completion
+  --max-users <number>  Maximum users when using --all (optional limit)
+  --verified-only       Only include verified users (default: include all registered users)
   --explore             Explore available data structures and tables
   --help                Show this help message
 
 Examples:
   bun scripts/query-circles-verified-users.ts --limit 20
   bun scripts/query-circles-verified-users.ts --all --output verified-users.json
-  bun scripts/query-circles-verified-users.ts --all --include-registered --max-users 100 --output all-users.json
+  bun scripts/query-circles-verified-users.ts --all --max-users 100 --output all-users.json
+  bun scripts/query-circles-verified-users.ts --all --verified-only --output verified-only.json
   bun scripts/query-circles-verified-users.ts --limit 10 --output sample-verified.json
   bun scripts/query-circles-verified-users.ts --explore
         `);
@@ -608,7 +602,7 @@ Examples:
 
   try {
     const query = new CirclesVerifiedUsersQuery();
-    
+
     console.log('🔵 Starting Circles verified users query...\n');
 
     // If explore mode is enabled, just explore and exit
@@ -619,9 +613,9 @@ Examples:
 
     let users: VerifiedUser[];
     const verifiedOnly = !includeRegistered;
-    
+
     if (queryAll) {
-      users = await query.queryAllVerifiedUsers(500, maxUsers, verifiedOnly);
+      users = await query.queryAllVerifiedUsers(1000, maxUsers, verifiedOnly);
     } else {
       const result = await query.queryVerifiedUsers(limit, undefined, verifiedOnly);
       users = result.users;
@@ -630,9 +624,9 @@ Examples:
     // Display summary
     const stats = query.getSummaryStats(users);
     console.log('\n📊 Summary Statistics:');
-    console.log(`- Total users: ${stats.totalUsers}`);
+    console.log(`- Total registered users: ${stats.totalRegisteredUsers}`);
     console.log(`- Verified users (3+ trusts): ${stats.verifiedUsers}`);
-    console.log(`- Registered users (0-2 trusts): ${stats.registeredUsers}`);
+    console.log(`- Unverified users (0-2 trusts): ${stats.unverifiedUsers}`);
     console.log(`- Verification rate: ${stats.verificationRate}`);
     console.log(`- Average incoming trusts: ${stats.avgIncomingTrusts}`);
     console.log(`- Max incoming trusts: ${stats.maxIncomingTrusts}`);
@@ -645,9 +639,11 @@ Examples:
       console.log(`\n📝 Sample users (first 5):`);
       users.slice(0, 5).forEach((user, index) => {
         const date = new Date(user.timestamp * 1000).toISOString().split('T')[0];
-        const status = user.isVerified ? '✅ VERIFIED' : '⚠️  REGISTERED';
+        const statusIcon = user.status === 'verified' ? '✅' : '📝';
+        const statusText = user.status === 'verified' ? 'VERIFIED' : 'UNVERIFIED';
         const trustInfo = `(${user.incomingTrustCount}←/${user.outgoingTrustCount}→ trusts)`;
-        console.log(`  ${index + 1}. ${user.avatar} ${status} ${trustInfo} (reg: ${date})`);
+        const nameInfo = user.name ? ` [${user.name}]` : '';
+        console.log(`  ${index + 1}. ${user.avatar}${nameInfo} ${statusIcon} ${statusText} ${trustInfo} (reg: ${date})`);
       });
     }
 

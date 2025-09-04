@@ -9,6 +9,9 @@ import {
   logger,
 } from '@elizaos/core';
 
+import { getUserInfo } from '../utils/userUtils.js';
+import { MatchStatus } from '../services/userStatusService.js';
+
 /**
  * Pass Message Action for Discover-Connection
  * Allows users to pass messages to their recently connected matches
@@ -35,13 +38,13 @@ export const passMessageAction: Action = {
         count: 50,
       });
 
-      // Find the most recent match with "connected" status for this user
+      // Find the most recent match with "connected" or "accepted" status for this user
       const connectedMatches = matches
         .filter((match) => {
           const matchData = match.content as any;
           return (
             (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-            matchData.status === 'connected'
+            (matchData.status === MatchStatus.CONNECTED || matchData.status === MatchStatus.ACCEPTED)
           );
         })
         .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -56,6 +59,7 @@ export const passMessageAction: Action = {
         'tell them',
         'let them know',
         'pass',
+        'oass', // Common typo for 'pass'
         'say',
         'message',
         'please tell',
@@ -97,7 +101,7 @@ export const passMessageAction: Action = {
           const matchData = match.content as any;
           return (
             (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-            matchData.status === 'connected'
+            (matchData.status === MatchStatus.CONNECTED || matchData.status === MatchStatus.ACCEPTED)
           );
         })
         .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -170,16 +174,12 @@ export const passMessageAction: Action = {
       }
 
       // Get sender's information for the message
-      const senderEntity = await runtime.getEntityById(senderUserId);
-      const senderDisplayName =
-        senderEntity?.metadata?.name || senderEntity?.metadata?.username || `Your connection`;
+      const senderInfo = await getUserInfo(runtime, senderUserId);
+      const senderDisplayName = senderInfo.displayName;
 
       // Get recipient's information
-      const recipientEntity = await runtime.getEntityById(recipientUserId);
-      const recipientDisplayName =
-        recipientEntity?.metadata?.name ||
-        recipientEntity?.metadata?.username ||
-        `User${recipientUserId}`;
+      const recipientInfo = await getUserInfo(runtime, recipientUserId);
+      const recipientDisplayName = recipientInfo.displayName;
 
       // Format the message to send to the recipient
       const formattedMessage = `📬 Message from ${senderDisplayName}: "${messageToPass}"`;

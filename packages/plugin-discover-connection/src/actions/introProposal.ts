@@ -16,7 +16,7 @@ import {
   introductionTrustInviteTemplate,
 } from '../utils/promptTemplates.js';
 import { ProposalQuotaService } from '../services/proposalQuota.js';
-import { UserTrustStatusService } from '../services/userTrustStatus.js';
+import { UserStatusService, UserStatus, MatchStatus } from '../services/userStatusService.js';
 
 /**
  * Introduction Proposal Action for Discover-Connection
@@ -25,7 +25,7 @@ import { UserTrustStatusService } from '../services/userTrustStatus.js';
 export const introProposalAction: Action = {
   name: 'INTRO_PROPOSAL',
   description:
-    'Sends introduction proposals to matches that are ready (circles_verification_filled, group_joined, or ready_for_introduction status). Use when user has verified matches waiting for introductions.',
+    'Sends introduction proposals to matches with MATCH_FOUND status. Requires user to have VERIFICATION_PENDING or GROUP_MEMBER status (provided verification info).',
   similes: [
     'SEND_INTRODUCTION',
     'PROPOSE_INTRO',
@@ -37,46 +37,49 @@ export const introProposalAction: Action = {
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
-      // Check if there are any matches with "group_joined", "ready_for_introduction", or "circles_verification_filled" status for this user
+      // Check if user has provided verification data (VERIFICATION_PENDING or GROUP_MEMBER)
+      const userStatusService = new UserStatusService(runtime);
+      const userStatus = await userStatusService.getUserStatus(message.entityId);
+
+      if (userStatus !== UserStatus.VERIFICATION_PENDING && userStatus !== UserStatus.GROUP_MEMBER) {
+        return false;
+      }
+
+      // Check if user has matches with MATCH_FOUND status (ready for proposal)
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
       });
 
-      // Find matches where this user is involved and status is ready for introduction
-      const pendingMatches = matches.filter((match) => {
+      const readyMatches = matches.filter((match) => {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          (matchData.status === 'group_joined' ||
-            matchData.status === 'ready_for_introduction' ||
-            matchData.status === 'circles_verification_filled')
+          matchData.status === MatchStatus.MATCH_FOUND
         );
       });
 
-      // Check quota before validation passes
-      if (pendingMatches.length > 0) {
-        try {
-          const userTrustService = new UserTrustStatusService(runtime);
-          const isUserTrusted = await userTrustService.isUserTrusted(message.entityId);
-
-          const quotaService = new ProposalQuotaService(runtime);
-          const canSendProposal = await quotaService.canSendProposal(
-            message.entityId,
-            isUserTrusted
-          );
-
-          if (!canSendProposal) {
-            logger.info(`[discover-connection] User ${message.entityId} exceeded proposal quota`);
-            return false;
-          }
-        } catch (quotaError) {
-          logger.error(`[discover-connection] Error checking quota: ${quotaError}`);
-          return false;
-        }
+      if (readyMatches.length === 0) {
+        return false;
       }
 
-      return pendingMatches.length > 0;
+      // Check quota before validation passes
+      try {
+        const quotaService = new ProposalQuotaService(runtime);
+        const canSendProposal = await quotaService.canSendProposal(
+          message.entityId,
+          userStatus
+        );
+
+        if (!canSendProposal) {
+          return false;
+        }
+      } catch (quotaError) {
+        logger.error(`[discover-connection] Error checking quota: ${quotaError}`);
+        return false;
+      }
+
+      return true;
     } catch (error) {
       logger.error(`[discover-connection] Error validating intro proposal action: ${error}`);
       return false;
@@ -95,17 +98,17 @@ export const introProposalAction: Action = {
         `[discover-connection] Processing introduction proposal for user ${message.entityId}`
       );
 
-      // Check quota and user trust status first
-      const userTrustService = new UserTrustStatusService(runtime);
-      const isUserTrusted = await userTrustService.isUserTrusted(message.entityId);
+      // Check quota and user status first
+      const userStatusService = new UserStatusService(runtime);
+      const userStatus = await userStatusService.getUserStatus(message.entityId);
 
       const quotaService = new ProposalQuotaService(runtime);
-      const canSendProposal = await quotaService.canSendProposal(message.entityId, isUserTrusted);
+      const canSendProposal = await quotaService.canSendProposal(message.entityId, userStatus);
 
       if (!canSendProposal) {
         const quotaStatus = await quotaService.getQuotaStatusMessage(
           message.entityId,
-          isUserTrusted
+          userStatus
         );
         const quotaErrorText = `You've reached your introduction request limit. ${quotaStatus}`;
 
@@ -123,7 +126,7 @@ export const introProposalAction: Action = {
         };
       }
 
-      // Get matches with "circles_trusted" or "ready_for_introduction" status for this user
+      // Get matches with MATCH_FOUND status for this user
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
@@ -133,9 +136,7 @@ export const introProposalAction: Action = {
         const matchData = match.content as any;
         return (
           (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          (matchData.status === 'group_joined' ||
-            matchData.status === 'ready_for_introduction' ||
-            matchData.status === 'circles_verification_filled')
+          matchData.status === MatchStatus.MATCH_FOUND
         );
       });
 
@@ -185,7 +186,7 @@ export const introProposalAction: Action = {
         : matchData.user1ConnectionContext || matchData.connectionContext || 'Not specified';
 
       // Check if requesting user is a group member to determine which template to use
-      const isRequestingUserGroupMember = await userTrustService.isUserTrusted(requestingUserId);
+      const isRequestingUserGroupMember = userStatus === UserStatus.GROUP_MEMBER;
 
       let prompt: string;
 
@@ -221,12 +222,24 @@ export const introProposalAction: Action = {
           const verificationData = verificationRecords[0].content as any;
           let verificationParts: string[] = [];
 
-          if (verificationData.metriAccount) {
+          // Only include Metri account if it exists and is not placeholder text
+          if (verificationData.metriAccount &&
+            verificationData.metriAccount !== 'Not provided' &&
+            verificationData.metriAccount !== 'None provided' &&
+            verificationData.metriAccount.trim() !== '') {
             verificationParts.push(`Metri Account: ${verificationData.metriAccount}`);
           }
 
-          if (verificationData.socialLinks && verificationData.socialLinks.length > 0) {
-            verificationParts.push(`Social Links: ${verificationData.socialLinks.join(', ')}`);
+          // Only include social links if they exist and are not placeholder text
+          if (verificationData.socialLinks &&
+            verificationData.socialLinks.length > 0 &&
+            !verificationData.socialLinks.some((link: string) =>
+              link === 'Not provided' || link === 'None provided' || link.trim() === '')) {
+            const validLinks = verificationData.socialLinks.filter((link: string) =>
+              link && link !== 'Not provided' && link !== 'None provided' && link.trim() !== '');
+            if (validLinks.length > 0) {
+              verificationParts.push(`Social Links: ${validLinks.join(', ')}`);
+            }
           }
 
           if (verificationParts.length > 0) {
@@ -285,17 +298,18 @@ export const introProposalAction: Action = {
           matchId: matchToProcess.id,
           introductionMessage,
           status: 'proposal_sent',
+          proposalInitiator: requestingUserId, // Track initiator in introduction record
         },
         createdAt: Date.now(),
       };
 
       await runtime.createMemory(introductionRecord, 'introductions');
 
-      // Update match status to "introduction_outgoing" for the requesting user
+      // Update match status to PROPOSAL_PENDING for the requesting user
       if (matchToProcess.id) {
         const updatedMatchContent = {
           ...matchData,
-          status: 'introduction_outgoing',
+          status: MatchStatus.PROPOSAL_PENDING,
         };
 
         await runtime.updateMemory({
@@ -304,7 +318,7 @@ export const introProposalAction: Action = {
         });
 
         logger.info(
-          `[discover-connection] DEBUG - INTRO_PROPOSAL Updated match status: ${matchData.user1Id} <-> ${matchData.user2Id} from "${matchData.status}" to "introduction_outgoing"`
+          `[discover-connection] DEBUG - INTRO_PROPOSAL Updated match status: ${matchData.user1Id} <-> ${matchData.user2Id} from "${matchData.status}" to "${MatchStatus.PROPOSAL_PENDING}" (initiator: ${requestingUserId})`
         );
       }
 
@@ -314,24 +328,28 @@ export const introProposalAction: Action = {
         count: 100,
       });
 
+      // Note: We already updated the main match record to PROPOSAL_PENDING above.
+      // We need to ensure there's a corresponding match record for the target user.
       const existingTargetMatch = allMatches.find((match) => {
         const matchContent = match.content as any;
         return (
-          (matchContent.user1Id === targetUserId && matchContent.user2Id === requestingUserId) ||
-          (matchContent.user1Id === requestingUserId && matchContent.user2Id === targetUserId)
+          match.id !== matchToProcess.id && // Don't find the same record we just updated
+          ((matchContent.user1Id === targetUserId && matchContent.user2Id === requestingUserId) ||
+            (matchContent.user1Id === requestingUserId && matchContent.user2Id === targetUserId))
         );
       });
 
       if (existingTargetMatch?.id) {
-        // Update existing match status instead of creating new one
+        // Update existing match status to PROPOSAL_PENDING as well
         logger.info(
-          `[discover-connection] DEBUG - INTRO_PROPOSAL Found existing match ${existingTargetMatch.id}, updating status to introduction_incoming`
+          `[discover-connection] DEBUG - INTRO_PROPOSAL Found existing match ${existingTargetMatch.id}, updating status to PROPOSAL_PENDING`
         );
 
         const existingMatchData = existingTargetMatch.content as any;
         const updatedExistingMatchContent = {
           ...existingMatchData,
-          status: 'introduction_incoming',
+          status: MatchStatus.PROPOSAL_PENDING,
+          proposalInitiator: requestingUserId, // Same initiator for both records
         };
 
         await runtime.updateMemory({
@@ -359,7 +377,8 @@ export const introProposalAction: Action = {
             user2Id: requestingUserId,
             compatibilityScore: matchData.compatibilityScore,
             reasoning: matchData.reasoning,
-            status: 'introduction_incoming', // Target user has incoming introduction
+            status: MatchStatus.PROPOSAL_PENDING, // Both users have same status but different roles
+            proposalInitiator: requestingUserId, // Track who initiated
             // Store contexts properly - no confusing swaps
             user1PersonaContext: isUser1
               ? matchData.user2PersonaContext
@@ -441,9 +460,9 @@ export const introProposalAction: Action = {
 
       // Record the proposal in quota system
       try {
-        await quotaService.recordProposal(message.entityId, isUserTrusted);
+        await quotaService.recordProposal(message.entityId, userStatus);
         logger.info(
-          `[discover-connection] Recorded proposal for ${isUserTrusted ? 'member' : 'non-member'} ${message.entityId}`
+          `[discover-connection] Recorded proposal for ${userStatus} ${message.entityId}`
         );
       } catch (quotaError) {
         logger.error(`[discover-connection] Error recording proposal: ${quotaError}`);
@@ -453,7 +472,7 @@ export const introProposalAction: Action = {
       // Get updated quota status for confirmation message
       const remainingQuotaMessage = await quotaService.getQuotaStatusMessage(
         message.entityId,
-        isUserTrusted
+        userStatus
       );
 
       const confirmationText = `Perfect! I've sent an introduction proposal to your potential match. They'll be notified about the connection opportunity and can choose to accept or decline. I'll let you know as soon as I hear back from them!\n\n${remainingQuotaMessage}`;
@@ -474,7 +493,7 @@ export const introProposalAction: Action = {
           matchId: matchToProcess.id,
           introductionMessage,
           status: 'proposal_sent',
-          isUserTrusted,
+          userStatus: userStatus,
           remainingQuota: remainingQuotaMessage,
         },
       };

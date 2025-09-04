@@ -1,4 +1,5 @@
 import { type IAgentRuntime, logger, type UUID } from '@elizaos/core';
+import { UserStatus } from './userStatusService.js';
 
 export interface QuotaInfo {
   userId: UUID;
@@ -6,19 +7,19 @@ export interface QuotaInfo {
   dailyProposals: number;
   lastProposalDate: number;
   lastResetDate: number;
-  remainingTotal?: number; // For non-trusted users
-  remainingDaily?: number; // For trusted users
+  remainingTotal?: number; // For VERIFICATION_PENDING users
+  remainingDaily?: number; // For GROUP_MEMBER users
 }
 
 export interface QuotaConfig {
-  nonMemberTotalLimit: number;
-  memberDailyLimit: number;
+  verificationPendingTotalLimit: number; // For VERIFICATION_PENDING status
+  groupMemberDailyLimit: number; // For GROUP_MEMBER status
 }
 
 /**
- * Service to manage proposal quotas for users
- * Non-members: Limited to N total proposals
- * Members (trusted): Limited to N proposals per day
+ * Service to manage proposal quotas for users based on their status
+ * VERIFICATION_PENDING: Limited to N total proposals (encourages wallet verification)
+ * GROUP_MEMBER: Limited to N proposals per day (reward for full verification)
  */
 export class ProposalQuotaService {
   private runtime: IAgentRuntime;
@@ -28,8 +29,8 @@ export class ProposalQuotaService {
   constructor(runtime: IAgentRuntime, config?: Partial<QuotaConfig>) {
     this.runtime = runtime;
     this.config = {
-      nonMemberTotalLimit: 3,
-      memberDailyLimit: 1,
+      verificationPendingTotalLimit: 3,
+      groupMemberDailyLimit: 1,
       ...config,
     };
 
@@ -37,29 +38,33 @@ export class ProposalQuotaService {
   }
 
   /**
-   * Check if a user can send a proposal based on their quota
+   * Check if a user can send a proposal based on their status and quota
    * @param userId - The user's entity ID
-   * @param isTrusted - Whether the user is trusted/member
+   * @param userStatus - The user's current status
    * @returns True if user can send proposal, false if quota exceeded
    */
-  async canSendProposal(userId: UUID, isTrusted: boolean): Promise<boolean> {
+  async canSendProposal(userId: UUID, userStatus: UserStatus): Promise<boolean> {
     try {
-      const quotaInfo = await this.getQuotaInfo(userId, isTrusted);
+      const quotaInfo = await this.getQuotaInfo(userId, userStatus);
 
-      if (isTrusted) {
-        // For trusted members: Check daily limit
+      if (userStatus === UserStatus.GROUP_MEMBER) {
+        // For group members: Check daily limit
         const canSendDaily = quotaInfo.remainingDaily! > 0;
         logger.debug(
-          `[proposal-quota] Member ${userId} can send proposal: ${canSendDaily} (remaining daily: ${quotaInfo.remainingDaily})`
+          `[proposal-quota] GROUP_MEMBER ${userId} can send proposal: ${canSendDaily} (remaining daily: ${quotaInfo.remainingDaily})`
         );
         return canSendDaily;
-      } else {
-        // For non-members: Check total limit
+      } else if (userStatus === UserStatus.VERIFICATION_PENDING) {
+        // For verification pending: Check total limit
         const canSendTotal = quotaInfo.remainingTotal! > 0;
         logger.debug(
-          `[proposal-quota] Non-member ${userId} can send proposal: ${canSendTotal} (remaining total: ${quotaInfo.remainingTotal})`
+          `[proposal-quota] VERIFICATION_PENDING ${userId} can send proposal: ${canSendTotal} (remaining total: ${quotaInfo.remainingTotal})`
         );
         return canSendTotal;
+      } else {
+        // Other statuses should not reach here (filtered by action validation)
+        logger.warn(`[proposal-quota] Invalid status ${userStatus} for user ${userId} quota check`);
+        return false;
       }
     } catch (error) {
       logger.error(`[proposal-quota] Error checking quota for ${userId}:`, error);
@@ -70,11 +75,11 @@ export class ProposalQuotaService {
   /**
    * Record that a user has sent a proposal (decrement their quota)
    * @param userId - The user's entity ID
-   * @param isTrusted - Whether the user is trusted/member
+   * @param userStatus - The user's current status
    */
-  async recordProposal(userId: UUID, isTrusted: boolean): Promise<void> {
+  async recordProposal(userId: UUID, userStatus: UserStatus): Promise<void> {
     try {
-      const quotaInfo = await this.getQuotaInfo(userId, isTrusted);
+      const quotaInfo = await this.getQuotaInfo(userId, userStatus);
       const now = Date.now();
 
       // Update counters
@@ -86,8 +91,9 @@ export class ProposalQuotaService {
       };
 
       await this.saveQuotaInfo(updatedQuota);
+      const statusLabel = userStatus === UserStatus.GROUP_MEMBER ? 'member' : 'non-member';
       logger.info(
-        `[proposal-quota] Recorded proposal for ${isTrusted ? 'member' : 'non-member'} ${userId}`
+        `[proposal-quota] Recorded proposal for ${statusLabel} ${userId}`
       );
     } catch (error) {
       logger.error(`[proposal-quota] Error recording proposal for ${userId}:`, error);
@@ -98,10 +104,10 @@ export class ProposalQuotaService {
   /**
    * Get quota information for a user
    * @param userId - The user's entity ID
-   * @param isTrusted - Whether the user is trusted/member
+   * @param userStatus - The user's current status
    * @returns Quota information including remaining allowances
    */
-  async getQuotaInfo(userId: UUID, isTrusted: boolean): Promise<QuotaInfo> {
+  async getQuotaInfo(userId: UUID, userStatus: UserStatus): Promise<QuotaInfo> {
     try {
       const quotaRecords = await this.runtime.getMemories({
         tableName: this.tableName,
@@ -144,16 +150,16 @@ export class ProposalQuotaService {
         logger.debug(`[proposal-quota] Reset daily counter for user ${userId}`);
       }
 
-      // Calculate remaining quotas
-      if (isTrusted) {
+      // Calculate remaining quotas based on user status
+      if (userStatus === UserStatus.GROUP_MEMBER) {
         quotaInfo.remainingDaily = Math.max(
           0,
-          this.config.memberDailyLimit - quotaInfo.dailyProposals
+          this.config.groupMemberDailyLimit - quotaInfo.dailyProposals
         );
-      } else {
+      } else if (userStatus === UserStatus.VERIFICATION_PENDING) {
         quotaInfo.remainingTotal = Math.max(
           0,
-          this.config.nonMemberTotalLimit - quotaInfo.totalProposals
+          this.config.verificationPendingTotalLimit - quotaInfo.totalProposals
         );
       }
 
@@ -249,17 +255,19 @@ export class ProposalQuotaService {
   /**
    * Get user's quota status message for display
    * @param userId - The user's entity ID
-   * @param isTrusted - Whether the user is trusted/member
+   * @param userStatus - The user's current status
    * @returns Human-readable quota status
    */
-  async getQuotaStatusMessage(userId: UUID, isTrusted: boolean): Promise<string> {
+  async getQuotaStatusMessage(userId: UUID, userStatus: UserStatus): Promise<string> {
     try {
-      const quotaInfo = await this.getQuotaInfo(userId, isTrusted);
+      const quotaInfo = await this.getQuotaInfo(userId, userStatus);
 
-      if (isTrusted) {
+      if (userStatus === UserStatus.GROUP_MEMBER) {
         return `As a group member, you can send one daily proposal and today you have ${quotaInfo.remainingDaily} more introduction request${quotaInfo.remainingDaily !== 1 ? 's' : ''} left.`;
-      } else {
+      } else if (userStatus === UserStatus.VERIFICATION_PENDING) {
         return `You have ${quotaInfo.remainingTotal} introduction request${quotaInfo.remainingTotal !== 1 ? 's' : ''} remaining. Join our Circles group to get daily requests!`;
+      } else {
+        return 'Please complete verification to send introduction requests.';
       }
     } catch (error) {
       logger.error(`[proposal-quota] Error getting status message for ${userId}:`, error);

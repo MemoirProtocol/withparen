@@ -319,23 +319,37 @@ const checkAutoTriggerConditions = async (
   callback: any
 ): Promise<void> => {
   try {
-    // Check if user has matches with circles_verification_filled status
+    // Import UserStatusService and MatchStatus for new status system
+    const { UserStatusService, UserStatus, MatchStatus } = await import('./services/userStatusService.js');
+    
+    // Check if user has verification status and matches ready for proposals
+    const userStatusService = new UserStatusService(runtime);
+    const userStatus = await userStatusService.getUserStatus(message.entityId);
+    
+    // Only auto-trigger if user can send proposals (has provided verification data)
+    if (userStatus !== UserStatus.VERIFICATION_PENDING && userStatus !== UserStatus.GROUP_MEMBER) {
+      logger.debug(
+        `[discover-connection] Auto-trigger skipped: User ${message.entityId} status ${userStatus} cannot send proposals`
+      );
+      return;
+    }
+
     const matches = await runtime.getMemories({
       tableName: 'matches',
       count: 50,
     });
 
-    const verificationCompleteMatches = matches.filter((match) => {
+    const readyMatches = matches.filter((match) => {
       const matchData = match.content as any;
       return (
         (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-        matchData.status === 'circles_verification_filled'
+        matchData.status === MatchStatus.MATCH_FOUND
       );
     });
 
-    if (verificationCompleteMatches.length > 0) {
+    if (readyMatches.length > 0) {
       logger.info(
-        `[discover-connection] Auto-trigger condition met: ${verificationCompleteMatches.length} matches with circles_verification_filled status`
+        `[discover-connection] Auto-trigger condition met: User ${message.entityId} (status: ${userStatus}) has ${readyMatches.length} matches ready for proposals`
       );
 
       // Create a synthetic message to trigger the INTRO_PROPOSAL action
@@ -566,30 +580,6 @@ const messageReceivedHandler = async ({
             logger.warn('actionNames data missing from state, even though it was requested');
           }
 
-          // DEBUG: Log which actions are available for this user
-          try {
-            const availableActions: string[] = [];
-            for (const action of runtime.actions) {
-              try {
-                const isValid = await action.validate(runtime, message);
-                if (isValid) {
-                  availableActions.push(action.name);
-                }
-              } catch (validationError) {
-                logger.debug(
-                  `[discover-connection] DEBUG - Action ${action.name} validation failed: ${validationError}`
-                );
-              }
-            }
-
-            logger.info(
-              `[discover-connection] DEBUG - AVAILABLE ACTIONS: User ${message.entityId} has ${availableActions.length} available actions: [${availableActions.join(', ')}]`
-            );
-          } catch (actionDebugError) {
-            logger.warn(
-              `[discover-connection] DEBUG - Failed to check action availability: ${actionDebugError}`
-            );
-          }
 
           const prompt = composePromptFromState({
             state,
@@ -1562,8 +1552,7 @@ export const discoverConnectionPlugin: Plugin = {
     'Discover-Connection - AI agent focused on connection discovery based on passions, challenges, and preferences',
   actions: [
     actions.findMatchAction,
-    actions.circlesTrustAction,
-    actions.circlesVerificationAction,
+    actions.joinGroupAction,
     actions.introProposalAction,
     actions.introAcceptAction,
     actions.passMessageAction,
@@ -1575,16 +1564,14 @@ export const discoverConnectionPlugin: Plugin = {
   events: events as any as PluginEvents,
   evaluators: [evaluators.reflectionEvaluator, evaluators.circlesVerificationEvaluator],
   providers: [
-    providers.onboardingProvider,
+    providers.userStatusProvider,
+    providers.matchStateProvider,
     providers.anxietyProvider,
     providers.timeProvider,
     providers.roleProvider,
     providers.actionsProvider,
     providers.characterProvider,
-    providers.circlesVerificationProvider,
     providers.recentMessagesProvider,
-    providers.matchStateProvider,
-    providers.introductionStateProvider,
   ],
   services: [TaskService],
 };

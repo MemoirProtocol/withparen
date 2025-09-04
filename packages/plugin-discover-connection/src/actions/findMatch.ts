@@ -13,11 +13,11 @@ import {
 } from '@elizaos/core';
 
 import { UserTrustStatusService } from '../services/userTrustStatus.js';
+import { UserStatusService, UserStatus, MatchStatus } from '../services/userStatusService.js';
 
 import {
   connectionDiscoveryTemplate,
   compatibilityAnalysisTemplate,
-  membershipStatusTemplate,
 } from '../utils/promptTemplates.js';
 
 // Interface removed - using ActionResult directly
@@ -29,7 +29,7 @@ import {
 export const findMatchAction: Action = {
   name: 'FIND_MATCH',
   description:
-    'Discovers potential connections for the user based on their persona and connection preferences',
+    'Discovers potential connections for the user based on their persona and connection preferences. call this action when and only when user clearly stated their intention to find a match.',
   similes: [
     'DISCOVER_CONNECTION',
     'FIND_CONNECTION',
@@ -41,11 +41,7 @@ export const findMatchAction: Action = {
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
-      logger.info(
-        `[discover-connection] DEBUG - FIND_MATCH validation for user ${message.entityId}`
-      );
-
-      // First check if user has pending matches that need resolution
+      // Check for pending matches that need resolution
       const matches = await runtime.getMemories({
         tableName: 'matches',
         count: 50,
@@ -55,102 +51,26 @@ export const findMatchAction: Action = {
         const matchData = match.content as any;
         return (
           matchData.user1Id === message.entityId ||
-          matchData.user2Id === message.entityId ||
-          (matchData.user1Id === message.entityId && matchData.user2Id === runtime.agentId)
+          matchData.user2Id === message.entityId
         );
       });
 
-      // Check for matches that require group membership resolution, verification, or have pending introductions
+      // Check for matches that need user attention (using new status system)
       const pendingMatches = userMatches.filter((match) => {
         const matchData = match.content as any;
-        return matchData.status === 'invitation_pending' ||
-          matchData.status === 'group_onboarding' ||
-          matchData.status === 'circles_verification_needed' ||
-          matchData.status === 'circles_verification_filled' ||
-          matchData.status === 'match_found' ||
-          matchData.status === 'introduction_outgoing' ||
-          matchData.status === 'introduction_incoming';
+        return matchData.status === MatchStatus.MATCH_FOUND ||
+          matchData.status === MatchStatus.PROPOSAL_PENDING;
       });
-
-      logger.info(
-        `[discover-connection] DEBUG - FIND_MATCH found ${userMatches.length} user matches, ${pendingMatches.length} pending matches (requiring resolution, verification, or with active introductions)`
-      );
 
       // If user has pending matches that need attention, don't allow more FIND_MATCH calls
       if (pendingMatches.length > 0) {
-        logger.info(
-          `[discover-connection] DEBUG - FIND_MATCH validation FAILED: User has pending matches that need attention before finding new ones`
-        );
         return false;
       }
 
-      // Check if user has completed onboarding and has persona/connection data
-      // Search across all actual persona dimension tables
-      const personaDimensions = [
-        'persona_demographic',
-        'persona_characteristic',
-        'persona_routine',
-        'persona_goal',
-        'persona_experience',
-        'persona_persona_relationship',
-        'persona_emotional_state',
-      ];
-
-      // Search across all actual connection dimension tables
-      const connectionDimensions = [
-        'connection_desired_type',
-        'connection_desired_background',
-        'connection_desired_goals',
-        'connection_desired_experience',
-        'connection_desired_communication',
-        'connection_desired_value',
-      ];
-
-      // Check for any persona memories across all dimensions
-      const personaPromises = personaDimensions.map(async (tableName) => {
-        try {
-          const memories = await runtime.getMemories({
-            roomId: message.roomId,
-            tableName,
-            count: 1, // Just need to know if any exist
-          });
-          return memories.length > 0;
-        } catch {
-          return false;
-        }
-      });
-
-      // Check for any connection memories across all dimensions
-      const connectionPromises = connectionDimensions.map(async (tableName) => {
-        try {
-          const memories = await runtime.getMemories({
-            roomId: message.roomId,
-            tableName,
-            count: 1, // Just need to know if any exist
-          });
-          return memories.length > 0;
-        } catch {
-          return false;
-        }
-      });
-
-      const [personaResults, connectionResults] = await Promise.all([
-        Promise.all(personaPromises),
-        Promise.all(connectionPromises),
-      ]);
-
-      const hasPersonaData = personaResults.some((result) => result);
-      const hasConnectionData = connectionResults.some((result) => result);
-      const isValid = hasPersonaData || hasConnectionData;
-
-      logger.info(
-        `[discover-connection] DEBUG - FIND_MATCH validation result: ${isValid ? 'PASSED' : 'FAILED'} (hasPersona: ${hasPersonaData}, hasConnection: ${hasConnectionData})`
-      );
-
-      return isValid;
+      return true;
     } catch (error) {
       logger.error(`[discover-connection] Error validating find match action: ${error}`);
-      return false; // Don't allow action if validation fails completely
+      return false;
     }
   },
 
@@ -447,46 +367,22 @@ export const findMatchAction: Action = {
         let noMatchText: string;
 
         if (!isUserGroupMember) {
-          // For non-members: invite them to join the group and create invitation record
+          // For non-members: invite them to join the group (no fake match record needed)
           noMatchText =
             trustedUserIds.size === 0
               ? "There aren't any available matches in my network right now. However, you can already join my Circles group!\n\nAs a member, you'll:\n• Get matching with other members\n• Be discoverable by new members seeking connections like you\n• Being part of my DataDAO\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification."
               : "There aren't any available matches in my network right now. However, you can already join my Circles group!\n\nAs a member, you'll:\n• Get matching with other members\n• Be discoverable by new members seeking connections like you\n• Being part of my DataDAO\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification.";
 
-          // Create special match record to track that this user was invited to join
-          const invitationMatchRecord = {
-            entityId: message.entityId,
-            agentId: runtime.agentId,
-            roomId: message.roomId,
-            content: {
-              text: `User ${message.entityId} was invited to join Paren's Circles group - no matches available`,
-              type: 'match_record',
-              user1Id: message.entityId, // The invited user
-              user2Id: runtime.agentId, // Use agent ID as placeholder for invitations
-              compatibilityScore: 0,
-              reasoning: 'No matches found - invited to join group to expand opportunities',
-              status: 'invitation_pending', // Special status for invitations
-              invitationReason: 'no_match_found',
-              // Store both users' contexts (only user1 in this case)
-              user1PersonaContext: personaContext,
-              user1ConnectionContext: connectionContext,
-              user2PersonaContext: null,
-              user2ConnectionContext: null,
-              // Keep old fields for backward compatibility
-              personaContext,
-              connectionContext,
-            },
-            createdAt: Date.now(),
-          };
-
+          // Update user status to unverified_member since they found no matches but need to join group
           try {
-            await runtime.createMemory(invitationMatchRecord, 'matches');
+            const userStatusService = new UserStatusService(runtime);
+            await userStatusService.transitionUserStatus(message.entityId, UserStatus.UNVERIFIED_MEMBER);
             logger.info(
-              `[discover-connection] DEBUG - FIND_MATCH Created invitation match: User ${message.entityId} status="invitation_pending" (no match found, invited to join group)`
+              `[discover-connection] DEBUG - FIND_MATCH Transitioned user ${message.entityId} to UNVERIFIED_MEMBER status (no matches found)`
             );
           } catch (error) {
             logger.error(
-              `[discover-connection] Failed to create invitation match record for user ${message.entityId}: ${error}`
+              `[discover-connection] Failed to transition user status for ${message.entityId}: ${error}`
             );
             // Continue anyway - don't break the user flow
           }
@@ -599,26 +495,10 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
 
         // Only generate membership message for non-group members
         if (!isUserGroupMember) {
-          logger.debug(`[discover-connection] Generating membership guidance for non-group member`);
-          // Generate membership guidance message for users not in Paren's group
-          const membershipPrompt = membershipStatusTemplate
-            .replace('{{userTrustStatus}}', 'not_trusted')
-            .replace('{{userContext}}', personaContext)
-            .replace('{{matchFound}}', 'true');
+          // Static membership guidance message for users not in Paren's group
+          const membershipMessage = "Now before I introduce you, I like to add you to my network by trusting you into my Circles group. If you're already a member in Circles network, please share your Metri account address so I can add you. If not, I still match you with like minded people who may also invite you to Circles network.";
 
-          const membershipResponse = await runtime.useModel(ModelType.TEXT_LARGE, {
-            prompt: membershipPrompt,
-          });
-
-          const membershipParsed = parseKeyValueXml(membershipResponse);
-          if (membershipParsed && membershipParsed.membershipMessage.trim()) {
-            finalResponseText = responseText + '\n\n' + membershipParsed.membershipMessage;
-            logger.debug(`[discover-connection] Added membership guidance for non-group member`);
-          }
-        } else {
-          logger.debug(
-            `[discover-connection] Skipping membership message for existing group member`
-          );
+          finalResponseText = responseText + '\n\n' + membershipMessage;
         }
       }
 
@@ -632,6 +512,7 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
           count: 100,
         });
 
+        // Check for ANY existing match between these users (any status)
         const duplicateMatch = existingMatches.find((match) => {
           const matchData = match.content as any;
           return (
@@ -640,13 +521,16 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
           );
         });
 
+        logger.info(
+          `[discover-connection] DEBUG - FIND_MATCH Duplicate check: ${duplicateMatch ? 'FOUND existing match' : 'No existing match'} between ${message.entityId} and ${matchedUserId}`
+        );
+
         if (!duplicateMatch) {
-          // Use the trust status we already computed
-          // Set appropriate status based on group membership
-          const matchStatus = isUserGroupMember ? 'ready_for_introduction' : 'group_onboarding';
+          // Set match status - all new matches start with MATCH_FOUND
+          const matchStatus = MatchStatus.MATCH_FOUND;
 
           logger.info(
-            `[discover-connection] DEBUG - FIND_MATCH MATCH STATUS: User ${message.entityId} (trusted: ${isUserGroupMember}) matched with ${matchedUserId}, setting status: "${matchStatus}"`
+            `[discover-connection] DEBUG - FIND_MATCH MATCH STATUS: User ${message.entityId} matched with ${matchedUserId}, setting status: "${matchStatus}"`
           );
 
           // Get matched user's contexts for proper storage
@@ -685,6 +569,7 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
               compatibilityScore,
               reasoning: compatibilityScorePlusReasoning,
               status: matchStatus,
+              proposalInitiator: null, // No proposal initiated yet
               // Store both users' contexts clearly
               user1PersonaContext: personaContext, // Requesting user's persona
               user1ConnectionContext: connectionContext, // What requesting user is looking for
@@ -701,6 +586,10 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
           logger.info(
             `[discover-connection] DEBUG - FIND_MATCH Created match record: ${message.entityId} <-> ${matchedUserId} status="${matchStatus}"`
           );
+
+          // Update user status to unverified_member (they've found a match but may need verification)
+          const userStatusService = new UserStatusService(runtime);
+          await userStatusService.transitionUserStatus(message.entityId, UserStatus.UNVERIFIED_MEMBER);
         } else {
           logger.info(
             `[discover-connection] Match already exists between ${message.entityId} and ${matchedUserId}, skipping duplicate creation`

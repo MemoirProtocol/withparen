@@ -8,6 +8,7 @@ import {
 } from '@elizaos/core';
 
 import { circlesVerificationExtractionTemplate } from '../utils/promptTemplates.js';
+import { UserStatusService, UserStatus } from '../services/userStatusService.js';
 
 /**
  * Circles Verification Evaluator for Discover-Connection
@@ -21,22 +22,23 @@ export const circlesVerificationEvaluator: Evaluator = {
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
-      // Check if user has any matches with 'circles_verification_needed' status
-      const matches = await runtime.getMemories({
-        tableName: 'matches',
-        count: 50,
-      });
+      // Only evaluate messages from users (not the agent)
+      if (message.entityId === runtime.agentId) {
+        return false;
+      }
 
-      const verificationMatches = matches.filter((match) => {
-        const matchData = match.content as any;
-        return (
-          (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-          matchData.status === 'circles_verification_needed'
-        );
-      });
+      // Check if user has UNVERIFIED_MEMBER status (needs to provide verification info)
+      const userStatusService = new UserStatusService(runtime);
+      const userStatus = await userStatusService.getUserStatus(message.entityId);
 
-      // Only evaluate if user is in verification process and sent a message
-      return verificationMatches.length > 0 && message.entityId !== runtime.agentId;
+      // Only evaluate if user is in UNVERIFIED_MEMBER status (verification needed)
+      const shouldEvaluate = userStatus === UserStatus.UNVERIFIED_MEMBER;
+
+      logger.debug(
+        `[circles-verification-evaluator] Validation for user ${message.entityId}: status=${userStatus}, should evaluate=${shouldEvaluate}`
+      );
+
+      return shouldEvaluate;
     } catch (error) {
       logger.error(`[circles-verification-evaluator] Error validating: ${error}`);
       return false;
@@ -83,8 +85,8 @@ export const circlesVerificationEvaluator: Evaluator = {
 
       // Format existing data for context
       const existingDataFormatted = `
-Metri Account: ${existingVerificationData.metriAccount || 'Not provided'}
-Social Links: ${existingVerificationData.socialLinks?.join(', ') || 'None provided'}
+Metri Account: ${existingVerificationData.metriAccount || ''}
+Social Links: ${existingVerificationData.socialLinks?.join(', ') || ''}
 Has Minimum Info: ${existingVerificationData.hasMinimumInfo || false}
       `.trim();
 
@@ -107,20 +109,35 @@ Has Minimum Info: ${existingVerificationData.hasMinimumInfo || false}
       logger.debug(`[circles-verification-evaluator] Extraction result: ${JSON.stringify(extractionParsed)}`);
 
       // Update verification data with extracted information
-      const newMetriAccount = extractionParsed.metriAccount?.trim() || existingVerificationData.metriAccount;
-      
-      // Merge social links, avoiding duplicates
+      // Only use extracted data if it's not empty and not placeholder text
+      const extractedMetriAccount = extractionParsed.metriAccount?.trim();
+      const isValidMetriAccount = extractedMetriAccount &&
+        extractedMetriAccount !== 'Not provided' &&
+        extractedMetriAccount !== 'None provided' &&
+        extractedMetriAccount !== '';
+
+      const newMetriAccount = isValidMetriAccount ? extractedMetriAccount : existingVerificationData.metriAccount;
+
+      // Merge social links, avoiding duplicates and placeholder text
       const existingSocialLinks = existingVerificationData.socialLinks || [];
-      const newSocialLinks = extractionParsed.socialLinks ? 
-        extractionParsed.socialLinks.split(',').map((link: string) => link.trim()).filter((link: string) => link) : 
+      const extractedSocialLinks = extractionParsed.socialLinks ?
+        extractionParsed.socialLinks.split(',')
+          .map((link: string) => link.trim())
+          .filter((link: string) => link &&
+            link !== 'None provided' &&
+            link !== 'Not provided' &&
+            link !== '') :
         [];
-      
-      const allSocialLinks = [...new Set([...existingSocialLinks, ...newSocialLinks])];
-      
-      // Check if we have minimum info
+
+      const allSocialLinks = [...new Set([...existingSocialLinks, ...extractedSocialLinks])];
+
+      // Check if we have minimum info - use AI's assessment with safety validation
+      const aiSaysMinimumInfo = extractionParsed.hasMinimumInfo === 'true' || extractionParsed.hasMinimumInfo === true;
       const hasAccount = !!newMetriAccount;
       const hasSocialLinks = allSocialLinks.length > 0;
-      const hasMinimumInfo = hasAccount && hasSocialLinks;
+
+      // AI must give green light AND we must have at least one account and one social link
+      const hasMinimumInfo = aiSaysMinimumInfo && hasAccount && hasSocialLinks;
 
       const updatedVerificationData = {
         metriAccount: newMetriAccount,
@@ -159,40 +176,28 @@ Has Minimum Info: ${existingVerificationData.hasMinimumInfo || false}
       }
 
       logger.info(
-        `[circles-verification-evaluator] Updated verification data - Account: ${!!newMetriAccount}, Social Links: ${allSocialLinks.length}, Complete: ${hasMinimumInfo}`
+        `[circles-verification-evaluator] Updated verification data - Account: ${!!newMetriAccount}, Social Links: ${allSocialLinks.length}, AI Assessment: ${aiSaysMinimumInfo}, Complete: ${hasMinimumInfo}`
       );
 
-      // If verification has minimum info, update match status to complete
+      // If verification has minimum info, transition user to VERIFICATION_PENDING status
+      logger.debug(
+        `[circles-verification-evaluator] Transition check for user ${message.entityId}: AI says minimum=${aiSaysMinimumInfo}, has account=${hasAccount}, has social=${hasSocialLinks}, final decision=${hasMinimumInfo}, was previously complete=${existingVerificationData.hasMinimumInfo}`
+      );
+
       if (hasMinimumInfo && !existingVerificationData.hasMinimumInfo) {
-        const matches = await runtime.getMemories({
-          tableName: 'matches',
-          count: 50,
-        });
+        const userStatusService = new UserStatusService(runtime);
+        const transitionResult = await userStatusService.transitionUserStatus(
+          message.entityId,
+          UserStatus.VERIFICATION_PENDING
+        );
 
-        const matchToUpdate = matches.find((match) => {
-          const matchData = match.content as any;
-          return (
-            (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-            matchData.status === 'circles_verification_needed'
-          );
-        });
-
-        if (matchToUpdate?.id) {
-          const matchData = matchToUpdate.content as any;
-          const updatedMatchContent = {
-            ...matchData,
-            status: 'circles_verification_filled',
-            verificationCompleted: true,
-            verificationCompletedAt: Date.now(),
-          };
-
-          await runtime.updateMemory({
-            id: matchToUpdate.id,
-            content: updatedMatchContent,
-          });
-
+        if (transitionResult) {
           logger.info(
-            `[circles-verification-evaluator] Updated match status to circles_verification_filled for user ${message.entityId}`
+            `[circles-verification-evaluator] Transitioned user ${message.entityId} to VERIFICATION_PENDING status`
+          );
+        } else {
+          logger.warn(
+            `[circles-verification-evaluator] Failed to transition user ${message.entityId} to VERIFICATION_PENDING status`
           );
         }
       }
