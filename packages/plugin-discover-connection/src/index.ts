@@ -311,6 +311,76 @@ export function shouldBypassShouldRespond(
 }
 
 /**
+ * Checks for auto-trigger conditions and executes appropriate actions
+ */
+const checkAutoTriggerConditions = async (
+  runtime: IAgentRuntime,
+  message: Memory,
+  callback: any
+): Promise<void> => {
+  try {
+    // Check if user has matches with circles_verification_filled status
+    const matches = await runtime.getMemories({
+      tableName: 'matches',
+      count: 50,
+    });
+
+    const verificationCompleteMatches = matches.filter((match) => {
+      const matchData = match.content as any;
+      return (
+        (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
+        matchData.status === 'circles_verification_filled'
+      );
+    });
+
+    if (verificationCompleteMatches.length > 0) {
+      logger.info(
+        `[discover-connection] Auto-trigger condition met: ${verificationCompleteMatches.length} matches with circles_verification_filled status`
+      );
+
+      // Create a synthetic message to trigger the INTRO_PROPOSAL action
+      const introMessage = {
+        ...message,
+        content: {
+          text: 'Please send the introduction proposal to my match.',
+          attachments: [],
+        },
+      };
+
+      // Check if the intro proposal action would validate
+      const introProposalAction = runtime.actions.find((action) => action.name === 'INTRO_PROPOSAL');
+      
+      if (introProposalAction) {
+        const isValid = await introProposalAction.validate(runtime, introMessage as Memory);
+        
+        if (isValid) {
+          logger.info(
+            `[discover-connection] Auto-triggering INTRO_PROPOSAL action for user ${message.entityId}`
+          );
+          
+          // Execute the intro proposal action
+          await introProposalAction.handler(
+            runtime,
+            introMessage as Memory,
+            undefined, // state
+            {}, // options
+            callback
+          );
+        } else {
+          logger.debug(
+            `[discover-connection] INTRO_PROPOSAL validation failed during auto-trigger for user ${message.entityId}`
+          );
+        }
+      } else {
+        logger.warn('[discover-connection] INTRO_PROPOSAL action not found during auto-trigger check');
+      }
+    }
+  } catch (error) {
+    logger.error(`[discover-connection] Error in auto-trigger check: ${error}`);
+  }
+};
+
+/**
  * Handles incoming messages and generates responses based on the provided runtime and message information.
  *
  * @param {MessageReceivedHandlerParams} params - The parameters needed for message handling, including runtime, message, and callback.
@@ -390,6 +460,45 @@ const messageReceivedHandler = async ({
           `[discover-connection] Processing message: ${truncateToCompleteSentence(message.content.text || '', 50)}...`
         );
 
+        // DEBUG: Log user trust status and match information at message start
+        try {
+          const { UserTrustStatusService } = await import('./services/userTrustStatus.js');
+          const userTrustService = new UserTrustStatusService(runtime);
+
+          const isUserTrusted = await userTrustService.isUserTrusted(message.entityId);
+          const trustInfo = await userTrustService.getUserTrustInfo(message.entityId);
+
+          logger.info(
+            `[discover-connection] DEBUG - USER STATUS: User ${message.entityId} - Trusted: ${isUserTrusted}, Wallet: ${trustInfo?.walletAddress || 'N/A'}`
+          );
+
+          // Check user's current matches and statuses
+          const matches = await runtime.getMemories({
+            tableName: 'matches',
+            count: 50,
+          });
+
+          const userMatches = matches.filter((match) => {
+            const matchData = match.content as any;
+            return (
+              matchData.user1Id === message.entityId ||
+              matchData.user2Id === message.entityId ||
+              (matchData.user1Id === message.entityId && matchData.user2Id === runtime.agentId)
+            );
+          });
+
+          logger.info(
+            `[discover-connection] DEBUG - USER MATCHES: User ${message.entityId} has ${userMatches.length} matches: ${userMatches
+              .map((m) => {
+                const data = m.content as any;
+                return `${data.status} (${data.user1Id} <-> ${data.user2Id})`;
+              })
+              .join(', ')}`
+          );
+        } catch (debugError) {
+          logger.warn(`[discover-connection] DEBUG - Failed to get user status: ${debugError}`);
+        }
+
         // First, save the incoming message
         logger.debug('[discover-connection] Saving message to memory and embeddings');
         await Promise.all([
@@ -455,6 +564,31 @@ const messageReceivedHandler = async ({
           state = await runtime.composeState(message, ['ACTIONS']);
           if (!state.values.actionNames) {
             logger.warn('actionNames data missing from state, even though it was requested');
+          }
+
+          // DEBUG: Log which actions are available for this user
+          try {
+            const availableActions: string[] = [];
+            for (const action of runtime.actions) {
+              try {
+                const isValid = await action.validate(runtime, message);
+                if (isValid) {
+                  availableActions.push(action.name);
+                }
+              } catch (validationError) {
+                logger.debug(
+                  `[discover-connection] DEBUG - Action ${action.name} validation failed: ${validationError}`
+                );
+              }
+            }
+
+            logger.info(
+              `[discover-connection] DEBUG - AVAILABLE ACTIONS: User ${message.entityId} has ${availableActions.length} available actions: [${availableActions.join(', ')}]`
+            );
+          } catch (actionDebugError) {
+            logger.warn(
+              `[discover-connection] DEBUG - Failed to check action availability: ${actionDebugError}`
+            );
           }
 
           const prompt = composePromptFromState({
@@ -589,10 +723,10 @@ const messageReceivedHandler = async ({
           if (responseContent && responseContent.actions && responseContent.actions.length > 0) {
             const action = responseContent.actions[0].toUpperCase();
 
-            if (action === 'CREATE_CONNECTION') {
+            if (action === 'FIND_MATCH') {
               // Execute the action so it persists HumanConnection in Memgraph
               logger.debug(
-                '[discover-connection] CREATE_CONNECTION: executing processActions to persist connection'
+                '[discover-connection] FIND_MATCH: executing processActions to persist connection'
               );
               await runtime.processActions(message, responseMessages, state, callback);
             } else if (action === 'NONE' && responseContent.text) {
@@ -616,6 +750,9 @@ const messageReceivedHandler = async ({
             await runtime.processActions(message, responseMessages, state, callback);
           }
           await runtime.evaluate(message, state, shouldRespond, callback, responseMessages);
+          
+          // Check for auto-trigger conditions (e.g., circles_verification_filled status)
+          await checkAutoTriggerConditions(runtime, message, callback);
         } else {
           // Handle the case where the agent decided not to respond
           logger.debug(
@@ -1424,8 +1561,9 @@ export const discoverConnectionPlugin: Plugin = {
   description:
     'Discover-Connection - AI agent focused on connection discovery based on passions, challenges, and preferences',
   actions: [
-    actions.createConnectionAction,
+    actions.findMatchAction,
     actions.circlesTrustAction,
+    actions.circlesVerificationAction,
     actions.introProposalAction,
     actions.introAcceptAction,
     actions.passMessageAction,

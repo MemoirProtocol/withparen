@@ -48,7 +48,8 @@
     "format:check": "prettier --check ./src",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "query:verified-users": "bun scripts/query-circles-verified-users.ts"
   },
   "peerDependencies": {
     "whatwg-url": "7.1.0"

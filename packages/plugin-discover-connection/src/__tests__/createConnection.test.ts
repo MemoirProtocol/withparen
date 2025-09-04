@@ -163,7 +163,7 @@ describe('createConnectionAction', () => {
 
   describe('basic functionality', () => {
     it('should have correct name and description', () => {
-      expect(createConnectionAction.name).toBe('CREATE_CONNECTION');
+      expect(createConnectionAction.name).toBe('FIND_MATCH');
       expect(createConnectionAction.description).toContain(
         'Discovers potential connections for the user based on their persona and connection preferences'
       );

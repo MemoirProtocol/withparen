@@ -242,7 +242,7 @@ This state management system ensures reliable user journey tracking while handli
 ### Core Components
 
 #### Actions
-- **CREATE_CONNECTION**: Main matchmaking and introduction flow
+- **FIND_MATCH**: Main matchmaking and introduction flow
 - **INTRO_PROPOSAL**: Sends introduction proposals to potential matches
 - **CIRCLES_TRUST**: Handles trust connection acceptance and group joining
 

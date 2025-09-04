@@ -260,6 +260,51 @@ Respond using XML format like this:
 IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.
 `;
 
+export const circlesVerificationExtractionTemplate = `# Circles Verification Data Extraction
+
+You are Discover-Connection, an AI connection facilitator. Extract verification information from user conversations.
+
+## Recent Conversation:
+{{recentMessages}}
+
+## Existing Verification Data:
+{{existingVerificationData}}
+
+## Task
+Analyze the recent conversation and extract any Circles network verification information provided by the user. Look for:
+
+1. **Metri Account**: Wallet addresses, metri accounts, or any account identifiers
+   - Ethereum addresses starting with 0x
+   - Mentions of "metri", "account", "wallet", "address"
+   - Any alphanumeric strings that could be account identifiers
+
+2. **Social Links**: Any social media profiles or personal websites
+   - GitHub profiles (github.com/username, @username, "on github i am username")
+   - Twitter/X profiles (twitter.com/username, x.com/username, @username, "on twitter")
+   - Personal websites (domain names, .com links)
+   - Any other social platform mentions
+
+## Instructions
+Extract verification data from the conversation. Only include NEW information not already in the existing data. If no new verification info is found, return empty fields.
+
+Determine if we have minimum viable information:
+- At least one identifier (metri account, wallet, or clear account reference)
+- At least one social link or profile
+
+Do NOT include any thinking, reasoning, or analysis sections in your response.
+Go directly to the XML response format without any preamble or explanation.
+
+Respond using XML format like this:
+<response>
+    <metriAccount>extracted account/wallet address if found</metriAccount>
+    <socialLinks>comma-separated list of social links/profiles found</socialLinks>
+    <hasMinimumInfo>true|false</hasMinimumInfo>
+    <extractionReason>brief explanation of what was found or why minimum threshold was/wasn't met</extractionReason>
+</response>
+
+IMPORTANT: Your response must ONLY contain the <response></response> XML block above. Do not include any text, thinking, or reasoning before or after this XML block. Start your response immediately with <response> and end with </response>.
+`;
+
 export const circlesVerificationTemplate = `# Circles Verification Process
 
 You are Discover-Connection, an AI connection facilitator. Help users who need verification to join the Circles network.
@@ -276,7 +321,7 @@ You are Discover-Connection, an AI connection facilitator. Help users who need v
 ## Task
 Guide the user through the verification process based on their current stage:
 
-1. **metro_account**: Ask if they have created a Metro account, if yes ask for account number
+1. **metri_account**: Ask if they have created a Metri account, if yes ask for account number
 2. **social_links**: Ask for social links (X, GitHub, personal website) that showcase their passion
 3. **ready**: Confirm they're ready for introductions to potential matches who can invite them
 
@@ -292,7 +337,7 @@ Go directly to the XML response format without any preamble or explanation.
 
 Respond using XML format like this:
 <response>
-    <nextStage>metro_account|social_links|ready|complete</nextStage>
+    <nextStage>metri_account|social_links|ready|complete</nextStage>
     <message>Your conversational message to guide the user</message>
 </response>
 

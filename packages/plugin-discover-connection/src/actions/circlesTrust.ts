@@ -26,11 +26,22 @@ export const circlesTrustAction: Action = {
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
+      logger.info(
+        `[discover-connection] DEBUG - CIRCLES_TRUST validation for user ${message.entityId}`
+      );
+
       // Check if user is providing a wallet address first
       const messageText = message.content.text?.toLowerCase() || '';
       const hasWalletAddress = messageText.includes('0x') && messageText.length >= 40;
 
+      logger.info(
+        `[discover-connection] DEBUG - CIRCLES_TRUST wallet check: hasWalletAddress=${hasWalletAddress}, messageText="${messageText}"`
+      );
+
       if (!hasWalletAddress) {
+        logger.info(
+          `[discover-connection] DEBUG - CIRCLES_TRUST validation FAILED: No wallet address found in message`
+        );
         return false;
       }
 
@@ -39,6 +50,10 @@ export const circlesTrustAction: Action = {
         tableName: 'matches',
         count: 50,
       });
+
+      logger.info(
+        `[discover-connection] DEBUG - CIRCLES_TRUST found ${matches.length} total matches in database`
+      );
 
       const groupOnboardingMatches = matches.filter((match) => {
         const matchData = match.content as any;
@@ -58,8 +73,36 @@ export const circlesTrustAction: Action = {
         );
       });
 
+      logger.info(
+        `[discover-connection] DEBUG - CIRCLES_TRUST match analysis: groupOnboardingMatches=${groupOnboardingMatches.length}, invitationMatches=${invitationMatches.length}`
+      );
+
+      // Log details of all matches for this user
+      const userMatches = matches.filter((match) => {
+        const matchData = match.content as any;
+        return (
+          matchData.user1Id === message.entityId ||
+          matchData.user2Id === message.entityId ||
+          (matchData.user1Id === message.entityId && matchData.user2Id === runtime.agentId)
+        );
+      });
+
+      logger.info(
+        `[discover-connection] DEBUG - CIRCLES_TRUST user matches details: ${userMatches
+          .map((m) => {
+            const data = m.content as any;
+            return `[${data.status}] ${data.user1Id} <-> ${data.user2Id}`;
+          })
+          .join(', ')}`
+      );
+
+      const isValid = groupOnboardingMatches.length > 0 || invitationMatches.length > 0;
+      logger.info(
+        `[discover-connection] DEBUG - CIRCLES_TRUST validation result: ${isValid ? 'PASSED' : 'FAILED'}`
+      );
+
       // Valid if has group_onboarding match OR has invitation match OR wallet address provided
-      return groupOnboardingMatches.length > 0 || invitationMatches.length > 0;
+      return isValid;
     } catch (error) {
       logger.error(`[discover-connection] Error validating circles trust action: ${error}`);
       return false;
@@ -95,7 +138,8 @@ export const circlesTrustAction: Action = {
               message.entityId,
               trustInfo.walletAddress,
               trustInfo.trustTransactionHash,
-              trustInfo.circlesGroupCA
+              trustInfo.circlesGroupCA,
+              message.roomId
             );
             logger.info(
               `[discover-connection] Ensured trust record exists for already-trusted user ${message.entityId}`
@@ -174,7 +218,7 @@ export const circlesTrustAction: Action = {
 
         const alreadyTrustedText = `Great! You're already a member of Paren's Circles group with your wallet ${trustInfo?.walletAddress || '[address]'}. 
 
-I'll send your introduction to your match right away!`;
+I'll send your introduction to your match right away!${trustInfo?.trustTransactionHash ? `\n\n🔗 Your original trust transaction: https://gnosisscan.io/tx/${trustInfo.trustTransactionHash}` : ''}`;
 
         if (callback) {
           await callback({
@@ -311,7 +355,8 @@ I'll send your introduction to your match right away!`;
             message.entityId,
             walletAddress,
             trustResult.transactionHash!,
-            parenCirclesCA
+            parenCirclesCA,
+            message.roomId
           );
           logger.info(
             `[discover-connection] Recorded user ${message.entityId} as trusted with wallet ${walletAddress}`
@@ -389,7 +434,9 @@ I'll send your introduction to your match right away!`;
 
         const successText = `You are now member with Paren's Circles group!
 
-You can choose to trust back my group, giving you access to DataDAO governance and daily match services: ${parenCirclesCA}`;
+You can choose to trust back my group, giving you access to DataDAO governance and daily match services: ${parenCirclesCA}
+
+🔗 View your trust transaction: https://gnosisscan.io/tx/${trustResult.transactionHash}`;
 
         if (callback) {
           await callback({

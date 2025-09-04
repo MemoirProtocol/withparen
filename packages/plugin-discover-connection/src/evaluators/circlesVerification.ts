@@ -7,16 +7,16 @@ import {
   parseKeyValueXml,
 } from '@elizaos/core';
 
-import { circlesVerificationTemplate } from '../utils/promptTemplates.js';
+import { circlesVerificationExtractionTemplate } from '../utils/promptTemplates.js';
 
 /**
  * Circles Verification Evaluator for Discover-Connection
- * Evaluates user responses during the Circles network verification process
+ * Extracts verification information from conversations and updates status when complete
  * Runs automatically when user has matches with 'circles_verification_needed' status
  */
 export const circlesVerificationEvaluator: Evaluator = {
   name: 'CIRCLES_VERIFICATION_EVALUATOR',
-  description: 'Evaluates and processes user responses during Circles network verification',
+  description: 'Extracts verification data from conversations and manages verification completion',
   examples: [],
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
@@ -46,7 +46,7 @@ export const circlesVerificationEvaluator: Evaluator = {
   handler: async (runtime: IAgentRuntime, message: Memory): Promise<void> => {
     try {
       logger.info(
-        `[circles-verification-evaluator] Processing verification for user ${message.entityId}`
+        `[circles-verification-evaluator] Processing verification data extraction for user ${message.entityId}`
       );
 
       // Get existing verification record
@@ -56,18 +56,17 @@ export const circlesVerificationEvaluator: Evaluator = {
         count: 1,
       });
 
-      let currentStage = 'metri_account';
-      let verificationData: any = {
-        stage: 'metri_account',
-        needsHelp: true,
+      let existingVerificationData: any = {
+        metriAccount: '',
+        socialLinks: [],
+        hasMinimumInfo: false,
       };
 
       if (verificationRecords.length > 0) {
-        verificationData = verificationRecords[0].content as any;
-        currentStage = verificationData.stage || 'metri_account';
+        existingVerificationData = verificationRecords[0].content as any;
       }
 
-      // Get message history for context
+      // Get recent message history for context
       const recentMessages = await runtime.getMemories({
         roomId: message.roomId,
         tableName: 'messages',
@@ -75,78 +74,63 @@ export const circlesVerificationEvaluator: Evaluator = {
       });
 
       const messageHistory = recentMessages
-        .map(
-          (m) =>
-            `${m.entityId === runtime.agentId ? 'Discover-Connection' : 'User'}: ${m.content.text}`
-        )
+        .reverse()
+        .map((m) => {
+          const sender = m.entityId === runtime.agentId ? 'Discover-Connection' : 'User';
+          return `${sender}: ${m.content.text}`;
+        })
         .join('\n');
 
-      // Use verification template with message history
-      const verificationPrompt = circlesVerificationTemplate
-        .replace('{{userContext}}', messageHistory)
-        .replace('{{userResponse}}', message.content.text || '')
-        .replace('{{verificationStage}}', currentStage);
+      // Format existing data for context
+      const existingDataFormatted = `
+Metri Account: ${existingVerificationData.metriAccount || 'Not provided'}
+Social Links: ${existingVerificationData.socialLinks?.join(', ') || 'None provided'}
+Has Minimum Info: ${existingVerificationData.hasMinimumInfo || false}
+      `.trim();
 
-      const verificationResponse = await runtime.useModel(ModelType.TEXT_LARGE, {
-        prompt: verificationPrompt,
+      // Use extraction template to analyze conversation
+      const extractionPrompt = circlesVerificationExtractionTemplate
+        .replace('{{recentMessages}}', messageHistory)
+        .replace('{{existingVerificationData}}', existingDataFormatted);
+
+      const extractionResponse = await runtime.useModel(ModelType.TEXT_LARGE, {
+        prompt: extractionPrompt,
       });
 
-      const verificationParsed = parseKeyValueXml(verificationResponse);
+      const extractionParsed = parseKeyValueXml(extractionResponse);
 
-      if (!verificationParsed) {
-        logger.error('[circles-verification-evaluator] Failed to parse verification response');
+      if (!extractionParsed) {
+        logger.error('[circles-verification-evaluator] Failed to parse extraction response');
         return;
       }
 
-      const nextStage = verificationParsed.nextStage || currentStage;
+      logger.debug(`[circles-verification-evaluator] Extraction result: ${JSON.stringify(extractionParsed)}`);
 
-      // Extract verification info based on current stage and user response
-      const messageText = message.content.text || '';
+      // Update verification data with extracted information
+      const newMetriAccount = extractionParsed.metriAccount?.trim() || existingVerificationData.metriAccount;
+      
+      // Merge social links, avoiding duplicates
+      const existingSocialLinks = existingVerificationData.socialLinks || [];
+      const newSocialLinks = extractionParsed.socialLinks ? 
+        extractionParsed.socialLinks.split(',').map((link: string) => link.trim()).filter((link: string) => link) : 
+        [];
+      
+      const allSocialLinks = [...new Set([...existingSocialLinks, ...newSocialLinks])];
+      
+      // Check if we have minimum info
+      const hasAccount = !!newMetriAccount;
+      const hasSocialLinks = allSocialLinks.length > 0;
+      const hasMinimumInfo = hasAccount && hasSocialLinks;
 
-      // Update verification data based on what was provided
-      if (currentStage === 'metri_account') {
-        // Check if user mentioned Metri account
-        if (
-          messageText.toLowerCase().includes('metri') ||
-          messageText.toLowerCase().includes('account')
-        ) {
-          const accountMatch =
-            messageText.match(/metri[:\s]*(\S+)/i) || messageText.match(/account[:\s]*(\S+)/i);
-
-          if (accountMatch) {
-            verificationData.metriAccount = accountMatch[1];
-          }
-        }
-      } else if (currentStage === 'social_links') {
-        // Extract social links from message
-        const links: string[] = [];
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        const matches = messageText.match(urlRegex);
-
-        if (matches) {
-          links.push(...matches);
-        }
-
-        // Also look for platform mentions
-        const platformRegex = /@(\w+)|github\.com\/(\w+)|twitter\.com\/(\w+)|x\.com\/(\w+)/g;
-        const platformMatches = messageText.match(platformRegex);
-
-        if (platformMatches) {
-          links.push(...platformMatches);
-        }
-
-        if (links.length > 0) {
-          verificationData.socialLinks = [...(verificationData.socialLinks || []), ...links];
-        }
-      }
-
-      // Update verification record
       const updatedVerificationData = {
-        ...verificationData,
-        stage: nextStage,
+        metriAccount: newMetriAccount,
+        socialLinks: allSocialLinks,
+        hasMinimumInfo: hasMinimumInfo,
         lastUpdated: Date.now(),
+        extractionReason: extractionParsed.extractionReason || 'Data extraction completed',
       };
 
+      // Update or create verification record
       if (verificationRecords.length > 0 && verificationRecords[0].id) {
         // Update existing record
         await runtime.updateMemory({
@@ -154,7 +138,7 @@ export const circlesVerificationEvaluator: Evaluator = {
           content: {
             ...updatedVerificationData,
             type: 'circles_verification',
-            text: `Verification stage: ${nextStage}`,
+            text: `Verification data: ${hasMinimumInfo ? 'Complete' : 'In progress'}`,
           },
         });
       } else {
@@ -166,7 +150,7 @@ export const circlesVerificationEvaluator: Evaluator = {
           content: {
             ...updatedVerificationData,
             type: 'circles_verification',
-            text: `Verification stage: ${nextStage}`,
+            text: `Verification data: ${hasMinimumInfo ? 'Complete' : 'In progress'}`,
           },
           createdAt: Date.now(),
         };
@@ -174,8 +158,12 @@ export const circlesVerificationEvaluator: Evaluator = {
         await runtime.createMemory(verificationRecord, 'circles_verification');
       }
 
-      // If verification is complete, update match status
-      if (nextStage === 'complete') {
+      logger.info(
+        `[circles-verification-evaluator] Updated verification data - Account: ${!!newMetriAccount}, Social Links: ${allSocialLinks.length}, Complete: ${hasMinimumInfo}`
+      );
+
+      // If verification has minimum info, update match status to complete
+      if (hasMinimumInfo && !existingVerificationData.hasMinimumInfo) {
         const matches = await runtime.getMemories({
           tableName: 'matches',
           count: 50,
@@ -210,7 +198,7 @@ export const circlesVerificationEvaluator: Evaluator = {
       }
 
       logger.info(
-        `[circles-verification-evaluator] Processed verification for user ${message.entityId}, stage: ${nextStage}`
+        `[circles-verification-evaluator] Completed verification processing for user ${message.entityId}`
       );
     } catch (error) {
       logger.error(`[circles-verification-evaluator] Error processing verification: ${error}`);

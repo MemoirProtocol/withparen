@@ -25,69 +25,109 @@ export const introductionStateProvider: Provider = {
         return introData.fromUserId === userId || introData.toUserId === userId;
       });
 
-      if (userIntroductions.length === 0) {
+      // Also check matches table for introduction statuses
+      const matches = await runtime.getMemories({
+        tableName: 'matches',
+        count: 50,
+      });
+
+      const introductionMatches = matches.filter((match) => {
+        const matchData = match.content as any;
+        return (
+          (matchData.user1Id === userId || matchData.user2Id === userId) &&
+          (matchData.status === 'introduction_outgoing' || matchData.status === 'introduction_incoming')
+        );
+      });
+
+      // Convert match records to introduction format for consistency
+      const matchBasedIntroductions = introductionMatches.map((match) => {
+        const matchData = match.content as any;
+        const isOutgoing = matchData.user1Id === userId;
         return {
-          text: 'No introduction requests yet.',
+          id: match.id,
+          content: {
+            fromUserId: isOutgoing ? userId : (matchData.user1Id === userId ? matchData.user2Id : matchData.user1Id),
+            toUserId: isOutgoing ? (matchData.user1Id === userId ? matchData.user2Id : matchData.user1Id) : userId,
+            status: 'proposal_sent', // Default status for active match introductions
+            introductionMessage: `Introduction based on match compatibility score: ${matchData.compatibilityScore}`,
+          },
+          createdAt: match.createdAt,
+        };
+      });
+
+      // Combine both sources
+      const allIntroductions = [...userIntroductions, ...matchBasedIntroductions];
+
+      if (allIntroductions.length === 0) {
+        return {
+          text: '# Introduction Status\n\n## Current Status: No Introduction Requests\nYou have no introduction requests yet. Once you find matches and request introductions, they will appear here.\n\n## Next Steps\n- Complete your onboarding to find potential connections\n- Use the "Find Match" action to discover compatible people',
           data: { introductionCount: 0 },
           values: { introSummary: 'No introduction requests yet.' },
         };
       }
 
       // Separate sent and received introductions
-      const sentIntroductions = userIntroductions.filter((intro) => {
+      const sentIntroductions = allIntroductions.filter((intro) => {
         const introData = intro.content as any;
         return introData.fromUserId === userId;
       });
 
-      const receivedIntroductions = userIntroductions.filter((intro) => {
+      const receivedIntroductions = allIntroductions.filter((intro) => {
         const introData = intro.content as any;
         return introData.toUserId === userId;
       });
 
-      let introSummary = `Introduction Status for user ${userId}:\n\n`;
+      let introSummary = `# Introduction Status Information\n\n## Overview for User ${userId}\n\n`;
 
       // Sent introductions
       if (sentIntroductions.length > 0) {
-        introSummary += `Introduction Requests You Sent: ${sentIntroductions.length}\n`;
+        introSummary += `## Introduction Requests You Sent: ${sentIntroductions.length}\n`;
+        introSummary += `Status Meaning: These are connections you've requested through introduction proposals.\n\n`;
 
         sentIntroductions.forEach((intro, index) => {
           const introData = intro.content as any;
           const status = introData.status;
           const createdAt = new Date(intro.createdAt || 0).toLocaleDateString();
 
-          introSummary += `  ${index + 1}. To ${introData.toUserId} - Status: ${status} (${createdAt})\n`;
+          introSummary += `### ${index + 1}. To ${introData.toUserId}\n`;
+          introSummary += `- **Status**: ${status}\n`;
+          introSummary += `- **Date**: ${createdAt}\n`;
 
           if (status === 'proposal_sent') {
-            introSummary += `     Waiting for their response...\n`;
+            introSummary += `- **Action Needed**: Waiting for their response\n`;
           } else if (status === 'accepted') {
-            introSummary += `     Great! They accepted the connection.\n`;
+            introSummary += `- **Result**: ✅ They accepted the connection! You can now communicate directly.\n`;
           } else if (status === 'declined') {
-            introSummary += `     They declined this connection.\n`;
+            introSummary += `- **Result**: ❌ They declined this connection.\n`;
           }
+          introSummary += '\n';
         });
-        introSummary += '\n';
       }
 
       // Received introductions
       if (receivedIntroductions.length > 0) {
-        introSummary += `Introduction Requests You Received: ${receivedIntroductions.length}\n`;
+        introSummary += `## Introduction Requests You Received: ${receivedIntroductions.length}\n`;
+        introSummary += `Status Meaning: These are people who want to connect with you.\n\n`;
 
         receivedIntroductions.forEach((intro, index) => {
           const introData = intro.content as any;
           const status = introData.status;
           const createdAt = new Date(intro.createdAt || 0).toLocaleDateString();
 
-          introSummary += `  ${index + 1}. From ${introData.fromUserId} - Status: ${status} (${createdAt})\n`;
+          introSummary += `### ${index + 1}. From ${introData.fromUserId}\n`;
+          introSummary += `- **Status**: ${status}\n`;
+          introSummary += `- **Date**: ${createdAt}\n`;
 
           if (status === 'proposal_sent') {
-            introSummary += `     Awaiting your response: "${introData.introductionMessage?.substring(0, 100)}..."\n`;
+            introSummary += `- **Message**: "${introData.introductionMessage?.substring(0, 100)}..."\n`;
+            introSummary += `- **Action Needed**: You need to respond - say "Yes, I accept" or "No, not interested"\n`;
           } else if (status === 'accepted') {
-            introSummary += `     You accepted this connection.\n`;
+            introSummary += `- **Result**: ✅ You accepted this connection! You can now communicate directly.\n`;
           } else if (status === 'declined') {
-            introSummary += `     You declined this connection.\n`;
+            introSummary += `- **Result**: ❌ You declined this connection.\n`;
           }
+          introSummary += '\n';
         });
-        introSummary += '\n';
       }
 
       // Add current pending actions
@@ -101,29 +141,41 @@ export const introductionStateProvider: Provider = {
         return introData.status === 'proposal_sent';
       });
 
+      // Add action items section
+      introSummary += `## Action Items\n`;
+      
       if (pendingReceivedIntros.length > 0) {
-        introSummary += `⏳ You have ${pendingReceivedIntros.length} pending introduction request(s) waiting for your response.\n`;
-        introSummary += 'Say "yes" or "accept" to connect, or "no" or "decline" to pass.\n\n';
+        introSummary += `### ⏳ Pending Responses Needed: ${pendingReceivedIntros.length}\n`;
+        introSummary += `You have ${pendingReceivedIntros.length} introduction request(s) waiting for your response.\n`;
+        introSummary += `**What to say**: "yes" or "accept" to connect, or "no" or "decline" to pass.\n\n`;
       }
 
       if (pendingSentIntros.length > 0) {
-        introSummary += `📤 You have ${pendingSentIntros.length} introduction request(s) waiting for responses from potential matches.\n\n`;
+        introSummary += `### 📤 Waiting for Responses: ${pendingSentIntros.length}\n`;
+        introSummary += `You have ${pendingSentIntros.length} introduction request(s) sent out, waiting for responses from potential matches.\n\n`;
+      }
+
+      if (pendingReceivedIntros.length === 0 && pendingSentIntros.length === 0) {
+        introSummary += `- No pending actions at this time\n`;
+        introSummary += `- Consider using "Find Match" to discover new potential connections\n\n`;
       }
 
       // Success summary
-      const successfulConnections = userIntroductions.filter((intro) => {
+      const successfulConnections = allIntroductions.filter((intro) => {
         const introData = intro.content as any;
         return introData.status === 'accepted';
       });
 
       if (successfulConnections.length > 0) {
-        introSummary += `🎉 Total successful connections made: ${successfulConnections.length}\n`;
+        introSummary += `## Success Summary\n`;
+        introSummary += `🎉 **Total successful connections made**: ${successfulConnections.length}\n`;
+        introSummary += `These are people you can now communicate with directly.\n`;
       }
 
       return {
         text: introSummary,
         data: {
-          totalIntroductions: userIntroductions.length,
+          totalIntroductions: allIntroductions.length,
           sentCount: sentIntroductions.length,
           receivedCount: receivedIntroductions.length,
           pendingReceived: pendingReceivedIntros.length,
@@ -140,7 +192,7 @@ export const introductionStateProvider: Provider = {
     } catch (error) {
       logger.error(`[discover-connection] Error in introduction state provider: ${error}`);
       return {
-        text: 'Unable to retrieve introduction status information at this time.',
+        text: '# Introduction Status\n\n## Status: Error\nUnable to retrieve introduction status information at this time. Please try again later.\n\n## What You Can Do\n- Check your connection\n- Try refreshing or sending another message',
         data: { error: true },
         values: { introSummary: 'Error retrieving introduction status' },
       };

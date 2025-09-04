@@ -257,7 +257,7 @@ export class ProposalQuotaService {
       const quotaInfo = await this.getQuotaInfo(userId, isTrusted);
 
       if (isTrusted) {
-        return `As a Circles member, you can send ${quotaInfo.remainingDaily} more introduction request${quotaInfo.remainingDaily !== 1 ? 's' : ''} today.`;
+        return `As a group member, you can send one daily proposal and today you have ${quotaInfo.remainingDaily} more introduction request${quotaInfo.remainingDaily !== 1 ? 's' : ''} left.`;
       } else {
         return `You have ${quotaInfo.remainingTotal} introduction request${quotaInfo.remainingTotal !== 1 ? 's' : ''} remaining. Join our Circles group to get daily requests!`;
       }

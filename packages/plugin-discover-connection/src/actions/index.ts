@@ -1,5 +1,6 @@
-export { createConnectionAction } from './createConnection';
+export { findMatchAction } from './findMatch';
 export { circlesTrustAction } from './circlesTrust';
+export { circlesVerificationAction } from './circlesVerification';
 export { introProposalAction } from './introProposal';
 export { introAcceptAction } from './introAccept';
 export { passMessageAction } from './passMessage';

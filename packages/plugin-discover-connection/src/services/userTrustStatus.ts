@@ -48,12 +48,14 @@ export class UserTrustStatusService {
    * @param walletAddress - The wallet address that was trusted
    * @param trustTransactionHash - The blockchain transaction hash
    * @param circlesGroupCA - The Circles group contract address
+   * @param roomId - The room ID where this trust record should be stored (optional, defaults to userId)
    */
   async setUserTrusted(
     userId: UUID,
     walletAddress: string,
     trustTransactionHash: string,
-    circlesGroupCA: string
+    circlesGroupCA: string,
+    roomId?: UUID
   ): Promise<void> {
     try {
       // Check if already exists to prevent duplicates
@@ -89,7 +91,7 @@ export class UserTrustStatusService {
       const trustRecord = {
         entityId: userId,
         agentId: this.runtime.agentId,
-        roomId: userId, // Use userId as roomId for user-specific data
+        roomId: roomId || this.runtime.agentId, // Use provided roomId or agent's roomId as fallback
         content: {
           userId,
           walletAddress,

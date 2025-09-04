@@ -23,11 +23,11 @@ import {
 // Interface removed - using ActionResult directly
 
 /**
- * Connection Discovery Action for Discover-Connection
+ * Find Match Action for Discover-Connection
  * Discovers potential connections based on user's passions, challenges, and preferences
  */
-export const createConnectionAction: Action = {
-  name: 'CREATE_CONNECTION',
+export const findMatchAction: Action = {
+  name: 'FIND_MATCH',
   description:
     'Discovers potential connections for the user based on their persona and connection preferences',
   similes: [
@@ -41,6 +41,49 @@ export const createConnectionAction: Action = {
 
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     try {
+      logger.info(
+        `[discover-connection] DEBUG - FIND_MATCH validation for user ${message.entityId}`
+      );
+
+      // First check if user has pending matches that need resolution
+      const matches = await runtime.getMemories({
+        tableName: 'matches',
+        count: 50,
+      });
+
+      const userMatches = matches.filter((match) => {
+        const matchData = match.content as any;
+        return (
+          matchData.user1Id === message.entityId ||
+          matchData.user2Id === message.entityId ||
+          (matchData.user1Id === message.entityId && matchData.user2Id === runtime.agentId)
+        );
+      });
+
+      // Check for matches that require group membership resolution, verification, or have pending introductions
+      const pendingMatches = userMatches.filter((match) => {
+        const matchData = match.content as any;
+        return matchData.status === 'invitation_pending' ||
+          matchData.status === 'group_onboarding' ||
+          matchData.status === 'circles_verification_needed' ||
+          matchData.status === 'circles_verification_filled' ||
+          matchData.status === 'match_found' ||
+          matchData.status === 'introduction_outgoing' ||
+          matchData.status === 'introduction_incoming';
+      });
+
+      logger.info(
+        `[discover-connection] DEBUG - FIND_MATCH found ${userMatches.length} user matches, ${pendingMatches.length} pending matches (requiring resolution, verification, or with active introductions)`
+      );
+
+      // If user has pending matches that need attention, don't allow more FIND_MATCH calls
+      if (pendingMatches.length > 0) {
+        logger.info(
+          `[discover-connection] DEBUG - FIND_MATCH validation FAILED: User has pending matches that need attention before finding new ones`
+        );
+        return false;
+      }
+
       // Check if user has completed onboarding and has persona/connection data
       // Search across all actual persona dimension tables
       const personaDimensions = [
@@ -98,10 +141,15 @@ export const createConnectionAction: Action = {
 
       const hasPersonaData = personaResults.some((result) => result);
       const hasConnectionData = connectionResults.some((result) => result);
+      const isValid = hasPersonaData || hasConnectionData;
 
-      return hasPersonaData || hasConnectionData;
+      logger.info(
+        `[discover-connection] DEBUG - FIND_MATCH validation result: ${isValid ? 'PASSED' : 'FAILED'} (hasPersona: ${hasPersonaData}, hasConnection: ${hasConnectionData})`
+      );
+
+      return isValid;
     } catch (error) {
-      logger.error(`[discover-connection] Error validating create connection action: ${error}`);
+      logger.error(`[discover-connection] Error validating find match action: ${error}`);
       return false; // Don't allow action if validation fails completely
     }
   },
@@ -350,8 +398,8 @@ export const createConnectionAction: Action = {
       // Check requesting user's group membership early to handle no-match scenarios appropriately
       const isUserGroupMember = await userTrustService.isUserTrusted(message.entityId);
 
-      logger.debug(
-        `[discover-connection] User ${message.entityId} group membership: ${isUserGroupMember}`
+      logger.info(
+        `[discover-connection] DEBUG - FIND_MATCH User ${message.entityId} group membership: ${isUserGroupMember} (trusted user check)`
       );
 
       // Check available data for connection discovery
@@ -402,8 +450,8 @@ export const createConnectionAction: Action = {
           // For non-members: invite them to join the group and create invitation record
           noMatchText =
             trustedUserIds.size === 0
-              ? "There aren't any available matches in our network right now. However, you can expand your opportunities by joining Paren's Circles group!\n\nAs a member, you'll:\n• Get priority matching with other trusted members\n• Be discoverable by new members seeking connections like you\n• Help grow our trusted network\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification."
-              : "I couldn't find a compatible match among the current trusted members, but you can expand your opportunities by joining Paren's Circles group!\n\nAs a member, you'll:\n• Get priority matching with other trusted members\n• Be discoverable by new members seeking connections like you\n• Help grow our trusted network\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification.";
+              ? "There aren't any available matches in my network right now. However, you can already join my Circles group!\n\nAs a member, you'll:\n• Get matching with other members\n• Be discoverable by new members seeking connections like you\n• Being part of my DataDAO\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification."
+              : "There aren't any available matches in my network right now. However, you can already join my Circles group!\n\nAs a member, you'll:\n• Get matching with other members\n• Be discoverable by new members seeking connections like you\n• Being part of my DataDAO\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification.";
 
           // Create special match record to track that this user was invited to join
           const invitationMatchRecord = {
@@ -434,7 +482,7 @@ export const createConnectionAction: Action = {
           try {
             await runtime.createMemory(invitationMatchRecord, 'matches');
             logger.info(
-              `[discover-connection] Created invitation match record for user ${message.entityId} - no match found, invited to join group`
+              `[discover-connection] DEBUG - FIND_MATCH Created invitation match: User ${message.entityId} status="invitation_pending" (no match found, invited to join group)`
             );
           } catch (error) {
             logger.error(
@@ -598,7 +646,7 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
           const matchStatus = isUserGroupMember ? 'ready_for_introduction' : 'group_onboarding';
 
           logger.info(
-            `[discover-connection] User ${message.entityId} group membership: ${isUserGroupMember}, setting match status: ${matchStatus}`
+            `[discover-connection] DEBUG - FIND_MATCH MATCH STATUS: User ${message.entityId} (trusted: ${isUserGroupMember}) matched with ${matchedUserId}, setting status: "${matchStatus}"`
           );
 
           // Get matched user's contexts for proper storage
@@ -651,7 +699,7 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
 
           await runtime.createMemory(matchRecord, 'matches');
           logger.info(
-            `[discover-connection] Created new match record: ${message.entityId} <-> ${matchedUserId}`
+            `[discover-connection] DEBUG - FIND_MATCH Created match record: ${message.entityId} <-> ${matchedUserId} status="${matchStatus}"`
           );
         } else {
           logger.info(

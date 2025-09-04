@@ -25,7 +25,7 @@ import { UserTrustStatusService } from '../services/userTrustStatus.js';
 export const introProposalAction: Action = {
   name: 'INTRO_PROPOSAL',
   description:
-    'Sends an introduction proposal to a potential match after the user expresses interest',
+    'Sends introduction proposals to matches that are ready (circles_verification_filled, group_joined, or ready_for_introduction status). Use when user has verified matches waiting for introductions.',
   similes: [
     'SEND_INTRODUCTION',
     'PROPOSE_INTRO',
@@ -54,22 +54,8 @@ export const introProposalAction: Action = {
         );
       });
 
-      // Also check if user is explicitly asking for an introduction in their message
-      const messageText = message.content.text?.toLowerCase() || '';
-      const introductonKeywords = [
-        'introduction',
-        'introduce',
-        'connect',
-        'yes',
-        'i would like',
-        'sounds good',
-      ];
-      const hasIntroductionRequest = introductonKeywords.some((keyword) =>
-        messageText.includes(keyword)
-      );
-
       // Check quota before validation passes
-      if (pendingMatches.length > 0 && hasIntroductionRequest) {
+      if (pendingMatches.length > 0) {
         try {
           const userTrustService = new UserTrustStatusService(runtime);
           const isUserTrusted = await userTrustService.isUserTrusted(message.entityId);
@@ -90,7 +76,7 @@ export const introProposalAction: Action = {
         }
       }
 
-      return pendingMatches.length > 0 && hasIntroductionRequest;
+      return pendingMatches.length > 0;
     } catch (error) {
       logger.error(`[discover-connection] Error validating intro proposal action: ${error}`);
       return false;
@@ -316,46 +302,93 @@ export const introProposalAction: Action = {
           id: matchToProcess.id,
           content: updatedMatchContent,
         });
+
+        logger.info(
+          `[discover-connection] DEBUG - INTRO_PROPOSAL Updated match status: ${matchData.user1Id} <-> ${matchData.user2Id} from "${matchData.status}" to "introduction_outgoing"`
+        );
       }
 
-      // Create a match record for the target user to prevent them from getting the same match
-      const targetMatchRecord = {
-        entityId: targetUserId,
-        agentId: runtime.agentId,
-        roomId: targetUserId, // For DMs, roomId equals the target user's entityId
-        content: {
-          text: `Match found between ${targetUserId} and ${requestingUserId} with compatibility score ${matchData.compatibilityScore}`,
-          type: 'match_record',
-          user1Id: targetUserId,
-          user2Id: requestingUserId,
-          compatibilityScore: matchData.compatibilityScore,
-          reasoning: matchData.reasoning,
-          status: 'introduction_incoming', // Target user has incoming introduction
-          // Store contexts properly - no confusing swaps
-          user1PersonaContext: isUser1
-            ? matchData.user2PersonaContext
-            : matchData.user1PersonaContext,
-          user1ConnectionContext: isUser1
-            ? matchData.user2ConnectionContext
-            : matchData.user1ConnectionContext,
-          user2PersonaContext: isUser1
-            ? matchData.user1PersonaContext
-            : matchData.user2PersonaContext,
-          user2ConnectionContext: isUser1
-            ? matchData.user1ConnectionContext
-            : matchData.user2ConnectionContext,
-          // Keep old fields for backward compatibility
-          personaContext: isUser1
-            ? matchData.user2PersonaContext || 'Not available'
-            : matchData.user1PersonaContext || matchData.personaContext || 'Not available',
-          connectionContext: isUser1
-            ? matchData.user2ConnectionContext || 'Not specified'
-            : matchData.user1ConnectionContext || matchData.connectionContext || 'Not specified',
-        },
-        createdAt: Date.now(),
-      };
+      // Check if target user already has a match record with the requesting user
+      const allMatches = await runtime.getMemories({
+        tableName: 'matches',
+        count: 100,
+      });
 
-      await runtime.createMemory(targetMatchRecord, 'matches');
+      const existingTargetMatch = allMatches.find((match) => {
+        const matchContent = match.content as any;
+        return (
+          (matchContent.user1Id === targetUserId && matchContent.user2Id === requestingUserId) ||
+          (matchContent.user1Id === requestingUserId && matchContent.user2Id === targetUserId)
+        );
+      });
+
+      if (existingTargetMatch?.id) {
+        // Update existing match status instead of creating new one
+        logger.info(
+          `[discover-connection] DEBUG - INTRO_PROPOSAL Found existing match ${existingTargetMatch.id}, updating status to introduction_incoming`
+        );
+
+        const existingMatchData = existingTargetMatch.content as any;
+        const updatedExistingMatchContent = {
+          ...existingMatchData,
+          status: 'introduction_incoming',
+        };
+
+        await runtime.updateMemory({
+          id: existingTargetMatch.id,
+          content: updatedExistingMatchContent,
+        });
+
+        logger.info(
+          `[discover-connection] DEBUG - INTRO_PROPOSAL Updated existing match status for target user ${targetUserId}`
+        );
+      } else {
+        // Create a match record for the target user to prevent them from getting the same match
+        logger.info(
+          `[discover-connection] DEBUG - INTRO_PROPOSAL No existing match found, creating new match record for target user ${targetUserId}`
+        );
+
+        const targetMatchRecord = {
+          entityId: targetUserId,
+          agentId: runtime.agentId,
+          roomId: targetUserId, // For DMs, roomId equals the target user's entityId
+          content: {
+            text: `Match found between ${targetUserId} and ${requestingUserId} with compatibility score ${matchData.compatibilityScore}`,
+            type: 'match_record',
+            user1Id: targetUserId,
+            user2Id: requestingUserId,
+            compatibilityScore: matchData.compatibilityScore,
+            reasoning: matchData.reasoning,
+            status: 'introduction_incoming', // Target user has incoming introduction
+            // Store contexts properly - no confusing swaps
+            user1PersonaContext: isUser1
+              ? matchData.user2PersonaContext
+              : matchData.user1PersonaContext,
+            user1ConnectionContext: isUser1
+              ? matchData.user2ConnectionContext
+              : matchData.user1ConnectionContext,
+            user2PersonaContext: isUser1
+              ? matchData.user1PersonaContext
+              : matchData.user2PersonaContext,
+            user2ConnectionContext: isUser1
+              ? matchData.user1ConnectionContext
+              : matchData.user2ConnectionContext,
+            // Keep old fields for backward compatibility
+            personaContext: isUser1
+              ? matchData.user2PersonaContext || 'Not available'
+              : matchData.user1PersonaContext || matchData.personaContext || 'Not available',
+            connectionContext: isUser1
+              ? matchData.user2ConnectionContext || 'Not specified'
+              : matchData.user1ConnectionContext || matchData.connectionContext || 'Not specified',
+          },
+          createdAt: Date.now(),
+        };
+
+        await runtime.createMemory(targetMatchRecord, 'matches');
+        logger.info(
+          `[discover-connection] DEBUG - INTRO_PROPOSAL Created new target match record for user ${targetUserId}`
+        );
+      }
 
       // Send introduction message to target user
       try {

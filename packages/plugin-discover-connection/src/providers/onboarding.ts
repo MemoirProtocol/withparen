@@ -9,7 +9,52 @@ export const onboardingProvider: Provider = {
   name: 'ONBOARDING',
   description:
     'Provides context for Discover-Connection onboarding to discover user passions, challenges, and connection preferences',
-  get: async (_runtime: IAgentRuntime, message: Memory, _state: State) => {
+  get: async (runtime: IAgentRuntime, message: Memory, _state: State) => {
+    try {
+      logger.debug(
+        `[onboarding] DEBUG - Checking if user ${message.entityId} needs onboarding context`
+      );
+
+      // Check if user has any matches - if so, they've moved past onboarding
+      const matches = await runtime.getMemories({
+        tableName: 'matches',
+        count: 50,
+      });
+
+      const userMatches = matches.filter((match) => {
+        const matchData = match.content as any;
+        return (
+          matchData.user1Id === message.entityId ||
+          matchData.user2Id === message.entityId ||
+          (matchData.user1Id === message.entityId && matchData.user2Id === runtime.agentId)
+        );
+      });
+
+      // If user has any matches, they've moved past onboarding
+      if (userMatches.length > 0) {
+        logger.info(
+          `[onboarding] DEBUG - User ${message.entityId} has ${userMatches.length} matches, skipping onboarding context`
+        );
+        return {
+          values: {
+            onboardingStage: 'completed',
+            conversationType: 'post_onboarding',
+          },
+          data: {
+            context: '',
+          },
+          text: '',
+        };
+      }
+
+      logger.info(
+        `[onboarding] DEBUG - User ${message.entityId} has no matches, providing onboarding context`
+      );
+    } catch (error) {
+      logger.warn(`[onboarding] Error checking user matches: ${error}`);
+      // Continue with onboarding if we can't check matches
+    }
+
     // Skip authentication check - always proceed to connection creation flow
     let hasPersonWithWebIdAndEmail = true; // Always true to skip to connection invite creation
 
@@ -143,7 +188,7 @@ Ask about:
 "I have a really good sense of your background, what you're passionate about, and the kind of connections that would help you grow. Would you like me to search for potential matches who might be perfect for what you're looking for?"
 
 **When they say yes:**
-- CALL CREATE_CONNECTION action
+- CALL FIND_MATCH action
 - The action will handle the matching process and provide results
 
 ### CONVERSATION PRINCIPLES:
