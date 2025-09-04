@@ -279,9 +279,7 @@ export const introAcceptAction: Action = {
               content: updatedMatchContent,
             });
 
-            logger.info(
-              `[discover-connection] Updated match ${match.id} status to CONNECTED`
-            );
+            logger.info(`[discover-connection] Updated match ${match.id} status to CONNECTED`);
           }
         }
       } else {

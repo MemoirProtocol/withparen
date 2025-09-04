@@ -40,7 +40,7 @@ export const matchStateProvider: Provider = {
 
       if (userMatches.length === 0 && userIntroductions.length === 0) {
         return {
-          text: '# Match & Introduction Status\n\n## Current Primary Status: no_matches\nYou have no matches or introduction requests yet. Consider sharing more about your interests, goals, and what kind of connections you\'re looking for.\n\n## Recommended Actions\n- **Find New Matches**: Share more about your background, interests, and goals to help find potential connections.',
+          text: "# Match & Introduction Status\n\n## Current Primary Status: no_matches\nYou have no matches or introduction requests yet. Consider sharing more about your interests, goals, and what kind of connections you're looking for.\n\n## Recommended Actions\n- **Find New Matches**: Share more about your background, interests, and goals to help find potential connections.",
           data: { matchCount: 0, introductionCount: 0 },
           values: { statusSummary: 'No matches or introductions found yet.' },
         };
@@ -81,7 +81,7 @@ export const matchStateProvider: Provider = {
       userIntroductions.forEach((intro) => {
         const introData = intro.content as any;
         const status = introData.status;
-        
+
         if (status === 'proposal_sent') {
           if (introData.fromUserId === userId) {
             introductionCategories.sent.push({
@@ -101,13 +101,15 @@ export const matchStateProvider: Provider = {
         } else if (status === 'accepted') {
           introductionCategories.accepted.push({
             introId: intro.id,
-            otherUserId: introData.fromUserId === userId ? introData.toUserId : introData.fromUserId,
+            otherUserId:
+              introData.fromUserId === userId ? introData.toUserId : introData.fromUserId,
             createdAt: intro.createdAt,
           });
         } else if (status === 'declined') {
           introductionCategories.declined.push({
             introId: intro.id,
-            otherUserId: introData.fromUserId === userId ? introData.toUserId : introData.fromUserId,
+            otherUserId:
+              introData.fromUserId === userId ? introData.toUserId : introData.fromUserId,
             createdAt: intro.createdAt,
           });
         }
@@ -128,22 +130,27 @@ export const matchStateProvider: Provider = {
         statusExplanation = 'The user has matches ready to request introductions for.';
       } else if (matchStatusCategories.proposal_pending.length > 0) {
         // Check if user is initiator or receiver
-        const userIsInitiator = matchStatusCategories.proposal_pending.some(match => {
+        const userIsInitiator = matchStatusCategories.proposal_pending.some((match) => {
           const matchData = match.content || {};
           return matchData.proposalInitiator === userId;
         });
-        
+
         if (userIsInitiator) {
           primaryStatus = 'proposals_sent';
-          statusExplanation = 'The user has introduction proposals sent out, waiting for responses.';
+          statusExplanation =
+            'The user has introduction proposals sent out, waiting for responses.';
         } else {
           primaryStatus = 'proposals_received';
-          statusExplanation = 'The user has received introduction proposals that need their response.';
+          statusExplanation =
+            'The user has received introduction proposals that need their response.';
         }
       } else if (introductionCategories.sent.length > 0) {
         primaryStatus = 'introduction_requests_sent';
         statusExplanation = 'The user has sent introduction requests, waiting for responses.';
-      } else if (matchStatusCategories.accepted.length > 0 || introductionCategories.accepted.length > 0) {
+      } else if (
+        matchStatusCategories.accepted.length > 0 ||
+        introductionCategories.accepted.length > 0
+      ) {
         primaryStatus = 'connections_accepted';
         statusExplanation = 'The user has accepted connections that should be active.';
       } else if (matchStatusCategories.connected.length > 0) {
@@ -164,15 +171,15 @@ export const matchStateProvider: Provider = {
       }
 
       if (matchStatusCategories.proposal_pending.length > 0) {
-        const sentProposals = matchStatusCategories.proposal_pending.filter(match => {
+        const sentProposals = matchStatusCategories.proposal_pending.filter((match) => {
           const matchData = match.content || {};
           return matchData.proposalInitiator === userId;
         });
-        const receivedProposals = matchStatusCategories.proposal_pending.filter(match => {
+        const receivedProposals = matchStatusCategories.proposal_pending.filter((match) => {
           const matchData = match.content || {};
           return matchData.proposalInitiator !== userId;
         });
-        
+
         if (sentProposals.length > 0) {
           statusSummary += `## Introduction Proposals Sent - Awaiting Response: ${sentProposals.length}\n`;
           statusSummary += `Status Meaning: You requested introductions to these people, waiting for their response.\n`;
@@ -181,7 +188,7 @@ export const matchStateProvider: Provider = {
           });
           statusSummary += '\n';
         }
-        
+
         if (receivedProposals.length > 0) {
           statusSummary += `## Introduction Proposals Received - Awaiting Your Response: ${receivedProposals.length}\n`;
           statusSummary += `Status Meaning: These people want to connect with you, waiting for your acceptance or decline.\n`;
@@ -220,7 +227,8 @@ export const matchStateProvider: Provider = {
         statusSummary += `## Introduction Requests Received - Need Your Response: ${introductionCategories.received.length}\n`;
         statusSummary += `Status Meaning: These people want to connect with you. You need to respond with "Yes, I accept" or "No, not interested".\n`;
         introductionCategories.received.forEach((intro, index) => {
-          const truncatedMessage = intro.message?.substring(0, 100) + (intro.message?.length > 100 ? '...' : '');
+          const truncatedMessage =
+            intro.message?.substring(0, 100) + (intro.message?.length > 100 ? '...' : '');
           statusSummary += `  ${index + 1}. From ${intro.otherUserId}: "${truncatedMessage}"\n`;
         });
         statusSummary += '\n';
@@ -251,19 +259,19 @@ export const matchStateProvider: Provider = {
 
       // Add recommended actions section
       statusSummary += `## Recommended Actions\n`;
-      
+
       // Priority: Introduction requests received (highest priority)
       if (introductionCategories.received.length > 0) {
         statusSummary += `- **⏰ URGENT: Respond to Introduction Requests**: You have ${introductionCategories.received.length} people waiting for your response. Say "yes" or "accept" to connect, or "no" or "decline" to pass.\n`;
       }
-      
+
       // Secondary: Matches ready for introduction requests
       if (matchStatusCategories.match_found.length > 0) {
         statusSummary += `- **Request Introductions**: Say "I would like an introduction" or "Yes, connect us" to request introductions for your ${matchStatusCategories.match_found.length} match(es).\n`;
       }
 
       // Tertiary: Respond to match-level proposals
-      const receivedProposals = matchStatusCategories.proposal_pending.filter(match => {
+      const receivedProposals = matchStatusCategories.proposal_pending.filter((match) => {
         const matchData = match.content || {};
         return matchData.proposalInitiator !== userId;
       });
@@ -272,11 +280,13 @@ export const matchStateProvider: Provider = {
       }
 
       // Fallback: Find new matches if no active workflow
-      if (matchStatusCategories.match_found.length === 0 && 
-          matchStatusCategories.proposal_pending.length === 0 && 
-          matchStatusCategories.accepted.length === 0 &&
-          introductionCategories.received.length === 0 &&
-          introductionCategories.sent.length === 0) {
+      if (
+        matchStatusCategories.match_found.length === 0 &&
+        matchStatusCategories.proposal_pending.length === 0 &&
+        matchStatusCategories.accepted.length === 0 &&
+        introductionCategories.received.length === 0 &&
+        introductionCategories.sent.length === 0
+      ) {
         statusSummary += `- **Find New Matches**: You can search for new connections by providing more details about your interests and goals.\n`;
       }
 
@@ -295,8 +305,10 @@ export const matchStateProvider: Provider = {
           pendingProposals: matchStatusCategories.proposal_pending.length,
           receivedIntroductions: introductionCategories.received.length,
           sentIntroductions: introductionCategories.sent.length,
-          acceptedConnections: matchStatusCategories.accepted.length + introductionCategories.accepted.length,
-          totalConnections: matchStatusCategories.connected.length + introductionCategories.accepted.length,
+          acceptedConnections:
+            matchStatusCategories.accepted.length + introductionCategories.accepted.length,
+          totalConnections:
+            matchStatusCategories.connected.length + introductionCategories.accepted.length,
         },
       };
     } catch (error) {

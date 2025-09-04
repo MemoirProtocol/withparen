@@ -320,12 +320,14 @@ const checkAutoTriggerConditions = async (
 ): Promise<void> => {
   try {
     // Import UserStatusService and MatchStatus for new status system
-    const { UserStatusService, UserStatus, MatchStatus } = await import('./services/userStatusService.js');
-    
+    const { UserStatusService, UserStatus, MatchStatus } = await import(
+      './services/userStatusService.js'
+    );
+
     // Check if user has verification status and matches ready for proposals
     const userStatusService = new UserStatusService(runtime);
     const userStatus = await userStatusService.getUserStatus(message.entityId);
-    
+
     // Only auto-trigger if user can send proposals (has provided verification data)
     if (userStatus !== UserStatus.VERIFICATION_PENDING && userStatus !== UserStatus.GROUP_MEMBER) {
       logger.debug(
@@ -362,16 +364,18 @@ const checkAutoTriggerConditions = async (
       };
 
       // Check if the intro proposal action would validate
-      const introProposalAction = runtime.actions.find((action) => action.name === 'INTRO_PROPOSAL');
-      
+      const introProposalAction = runtime.actions.find(
+        (action) => action.name === 'INTRO_PROPOSAL'
+      );
+
       if (introProposalAction) {
         const isValid = await introProposalAction.validate(runtime, introMessage as Memory);
-        
+
         if (isValid) {
           logger.info(
             `[discover-connection] Auto-triggering INTRO_PROPOSAL action for user ${message.entityId}`
           );
-          
+
           // Execute the intro proposal action
           await introProposalAction.handler(
             runtime,
@@ -386,7 +390,9 @@ const checkAutoTriggerConditions = async (
           );
         }
       } else {
-        logger.warn('[discover-connection] INTRO_PROPOSAL action not found during auto-trigger check');
+        logger.warn(
+          '[discover-connection] INTRO_PROPOSAL action not found during auto-trigger check'
+        );
       }
     }
   } catch (error) {
@@ -580,7 +586,6 @@ const messageReceivedHandler = async ({
             logger.warn('actionNames data missing from state, even though it was requested');
           }
 
-
           const prompt = composePromptFromState({
             state,
             template: runtime.character.templates?.messageHandlerTemplate || messageHandlerTemplate,
@@ -740,7 +745,7 @@ const messageReceivedHandler = async ({
             await runtime.processActions(message, responseMessages, state, callback);
           }
           await runtime.evaluate(message, state, shouldRespond, callback, responseMessages);
-          
+
           // Check for auto-trigger conditions (e.g., circles_verification_filled status)
           await checkAutoTriggerConditions(runtime, message, callback);
         } else {

@@ -106,33 +106,40 @@ Has Minimum Info: ${existingVerificationData.hasMinimumInfo || false}
         return;
       }
 
-      logger.debug(`[circles-verification-evaluator] Extraction result: ${JSON.stringify(extractionParsed)}`);
+      logger.debug(
+        `[circles-verification-evaluator] Extraction result: ${JSON.stringify(extractionParsed)}`
+      );
 
       // Update verification data with extracted information
       // Only use extracted data if it's not empty and not placeholder text
       const extractedMetriAccount = extractionParsed.metriAccount?.trim();
-      const isValidMetriAccount = extractedMetriAccount &&
+      const isValidMetriAccount =
+        extractedMetriAccount &&
         extractedMetriAccount !== 'Not provided' &&
         extractedMetriAccount !== 'None provided' &&
         extractedMetriAccount !== '';
 
-      const newMetriAccount = isValidMetriAccount ? extractedMetriAccount : existingVerificationData.metriAccount;
+      const newMetriAccount = isValidMetriAccount
+        ? extractedMetriAccount
+        : existingVerificationData.metriAccount;
 
       // Merge social links, avoiding duplicates and placeholder text
       const existingSocialLinks = existingVerificationData.socialLinks || [];
-      const extractedSocialLinks = extractionParsed.socialLinks ?
-        extractionParsed.socialLinks.split(',')
-          .map((link: string) => link.trim())
-          .filter((link: string) => link &&
-            link !== 'None provided' &&
-            link !== 'Not provided' &&
-            link !== '') :
-        [];
+      const extractedSocialLinks = extractionParsed.socialLinks
+        ? extractionParsed.socialLinks
+            .split(',')
+            .map((link: string) => link.trim())
+            .filter(
+              (link: string) =>
+                link && link !== 'None provided' && link !== 'Not provided' && link !== ''
+            )
+        : [];
 
       const allSocialLinks = [...new Set([...existingSocialLinks, ...extractedSocialLinks])];
 
       // Check if we have minimum info - use AI's assessment with safety validation
-      const aiSaysMinimumInfo = extractionParsed.hasMinimumInfo === 'true' || extractionParsed.hasMinimumInfo === true;
+      const aiSaysMinimumInfo =
+        extractionParsed.hasMinimumInfo === 'true' || extractionParsed.hasMinimumInfo === true;
       const hasAccount = !!newMetriAccount;
       const hasSocialLinks = allSocialLinks.length > 0;
 

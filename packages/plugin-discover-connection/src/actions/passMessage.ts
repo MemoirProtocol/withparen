@@ -44,7 +44,8 @@ export const passMessageAction: Action = {
           const matchData = match.content as any;
           return (
             (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-            (matchData.status === MatchStatus.CONNECTED || matchData.status === MatchStatus.ACCEPTED)
+            (matchData.status === MatchStatus.CONNECTED ||
+              matchData.status === MatchStatus.ACCEPTED)
           );
         })
         .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -101,7 +102,8 @@ export const passMessageAction: Action = {
           const matchData = match.content as any;
           return (
             (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-            (matchData.status === MatchStatus.CONNECTED || matchData.status === MatchStatus.ACCEPTED)
+            (matchData.status === MatchStatus.CONNECTED ||
+              matchData.status === MatchStatus.ACCEPTED)
           );
         })
         .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));

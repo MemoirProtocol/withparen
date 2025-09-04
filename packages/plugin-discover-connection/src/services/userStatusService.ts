@@ -5,22 +5,22 @@ import { type IAgentRuntime, type UUID, logger } from '@elizaos/core';
  * Represents the user's membership level in the Discover-Connection system
  */
 export enum UserStatus {
-  ONBOARDING = 'onboarding',                // User in discovery phase, going through onboarding
-  UNVERIFIED_MEMBER = 'unverified_member',  // Completed onboarding but not Circles verified  
-  VERIFICATION_PENDING = 'verification_pending',  // Provided verification info, can send proposals, awaiting full verification
-  GROUP_MEMBER = 'group_member'             // Circles verified and part of Paren's network
+  ONBOARDING = 'onboarding', // User in discovery phase, going through onboarding
+  UNVERIFIED_MEMBER = 'unverified_member', // Completed onboarding but not Circles verified
+  VERIFICATION_PENDING = 'verification_pending', // Provided verification info, can send proposals, awaiting full verification
+  GROUP_MEMBER = 'group_member', // Circles verified and part of Paren's network
 }
 
 /**
- * Match Status Enumeration  
+ * Match Status Enumeration
  * Represents the state of a connection match workflow
  */
 export enum MatchStatus {
-  MATCH_FOUND = 'match_found',              // Match discovered, awaiting user decision
-  PROPOSAL_PENDING = 'proposal_pending',    // Introduction requested, awaiting response
-  ACCEPTED = 'accepted',                    // Both parties accepted
-  DECLINED = 'declined',                    // Connection declined
-  CONNECTED = 'connected'                   // Active connection established
+  MATCH_FOUND = 'match_found', // Match discovered, awaiting user decision
+  PROPOSAL_PENDING = 'proposal_pending', // Introduction requested, awaiting response
+  ACCEPTED = 'accepted', // Both parties accepted
+  DECLINED = 'declined', // Connection declined
+  CONNECTED = 'connected', // Active connection established
 }
 
 /**
@@ -42,7 +42,7 @@ export class UserStatusService {
       const userStatusRecords = await this.runtime.getMemories({
         tableName: 'user_status',
         entityId: userId,
-        count: 1
+        count: 1,
       });
 
       if (userStatusRecords.length === 0) {
@@ -54,7 +54,9 @@ export class UserStatusService {
       const currentStatus = userStatusRecords[0].content.status as UserStatus;
       return currentStatus;
     } catch (error) {
-      logger.error(`[discover-connection] UserStatusService: Error getting user status for ${userId}: ${error}`);
+      logger.error(
+        `[discover-connection] UserStatusService: Error getting user status for ${userId}: ${error}`
+      );
       // Default to onboarding for safety
       return UserStatus.ONBOARDING;
     }
@@ -69,7 +71,7 @@ export class UserStatusService {
       const existingRecords = await this.runtime.getMemories({
         tableName: 'user_status',
         entityId: userId,
-        count: 1
+        count: 1,
       });
 
       if (existingRecords.length > 0) {
@@ -80,15 +82,17 @@ export class UserStatusService {
             ...existingRecord.content,
             status,
             updatedAt: Date.now(),
-            previousStatus: existingRecord.content.status
+            previousStatus: existingRecord.content.status,
           };
 
           await this.runtime.updateMemory({
             id: existingRecord.id,
-            content: updatedContent
+            content: updatedContent,
           });
 
-          logger.info(`[discover-connection] UserStatusService: Updated user ${userId} status from ${existingRecord.content.status} to ${status}`);
+          logger.info(
+            `[discover-connection] UserStatusService: Updated user ${userId} status from ${existingRecord.content.status} to ${status}`
+          );
         }
       } else {
         // Create new record
@@ -101,16 +105,20 @@ export class UserStatusService {
             text: `User status: ${status}`,
             type: 'user_status',
             createdAt: Date.now(),
-            updatedAt: Date.now()
+            updatedAt: Date.now(),
           },
-          createdAt: Date.now()
+          createdAt: Date.now(),
         };
 
         await this.runtime.createMemory(statusRecord, 'user_status');
-        logger.info(`[discover-connection] UserStatusService: Created initial status ${status} for user ${userId}`);
+        logger.info(
+          `[discover-connection] UserStatusService: Created initial status ${status} for user ${userId}`
+        );
       }
     } catch (error) {
-      logger.error(`[discover-connection] UserStatusService: Error setting user status for ${userId} to ${status}: ${error}`);
+      logger.error(
+        `[discover-connection] UserStatusService: Error setting user status for ${userId} to ${status}: ${error}`
+      );
       throw error;
     }
   }
@@ -121,19 +129,23 @@ export class UserStatusService {
   async transitionUserStatus(userId: UUID, newStatus: UserStatus): Promise<boolean> {
     try {
       const currentStatus = await this.getUserStatus(userId);
-      
+
       // Validate transition
       const isValidTransition = this.isValidStatusTransition(currentStatus, newStatus);
-      
+
       if (!isValidTransition) {
-        logger.warn(`[discover-connection] UserStatusService: Invalid status transition for user ${userId}: ${currentStatus} -> ${newStatus}`);
+        logger.warn(
+          `[discover-connection] UserStatusService: Invalid status transition for user ${userId}: ${currentStatus} -> ${newStatus}`
+        );
         return false;
       }
 
       await this.setUserStatus(userId, newStatus);
       return true;
     } catch (error) {
-      logger.error(`[discover-connection] UserStatusService: Error transitioning user status for ${userId}: ${error}`);
+      logger.error(
+        `[discover-connection] UserStatusService: Error transitioning user status for ${userId}: ${error}`
+      );
       return false;
     }
   }
@@ -145,9 +157,13 @@ export class UserStatusService {
     // Define allowed transitions
     const allowedTransitions: Record<UserStatus, UserStatus[]> = {
       [UserStatus.ONBOARDING]: [UserStatus.UNVERIFIED_MEMBER, UserStatus.GROUP_MEMBER],
-      [UserStatus.UNVERIFIED_MEMBER]: [UserStatus.VERIFICATION_PENDING, UserStatus.GROUP_MEMBER, UserStatus.ONBOARDING], // Allow back to onboarding if needed
+      [UserStatus.UNVERIFIED_MEMBER]: [
+        UserStatus.VERIFICATION_PENDING,
+        UserStatus.GROUP_MEMBER,
+        UserStatus.ONBOARDING,
+      ], // Allow back to onboarding if needed
       [UserStatus.VERIFICATION_PENDING]: [UserStatus.GROUP_MEMBER], // Can only move to group member once verified
-      [UserStatus.GROUP_MEMBER]: [] // Group members typically don't transition back
+      [UserStatus.GROUP_MEMBER]: [], // Group members typically don't transition back
     };
 
     return allowedTransitions[currentStatus]?.includes(newStatus) || currentStatus === newStatus;
@@ -161,7 +177,9 @@ export class UserStatusService {
       const currentStatus = await this.getUserStatus(userId);
       return this.isStatusSufficientForAction(currentStatus, requiredStatus);
     } catch (error) {
-      logger.error(`[discover-connection] UserStatusService: Error checking action permission for user ${userId}: ${error}`);
+      logger.error(
+        `[discover-connection] UserStatusService: Error checking action permission for user ${userId}: ${error}`
+      );
       return false;
     }
   }
@@ -169,13 +187,16 @@ export class UserStatusService {
   /**
    * Check if current status is sufficient for required status
    */
-  private isStatusSufficientForAction(currentStatus: UserStatus, requiredStatus: UserStatus): boolean {
+  private isStatusSufficientForAction(
+    currentStatus: UserStatus,
+    requiredStatus: UserStatus
+  ): boolean {
     // Define status hierarchy (higher number = higher access level)
     const statusHierarchy = {
       [UserStatus.ONBOARDING]: 1,
       [UserStatus.UNVERIFIED_MEMBER]: 2,
       [UserStatus.VERIFICATION_PENDING]: 3,
-      [UserStatus.GROUP_MEMBER]: 4
+      [UserStatus.GROUP_MEMBER]: 4,
     };
 
     return statusHierarchy[currentStatus] >= statusHierarchy[requiredStatus];
@@ -189,7 +210,7 @@ export class UserStatusService {
       // Define persona and connection dimension tables
       const personaDimensions = [
         'persona_demographic',
-        'persona_characteristic', 
+        'persona_characteristic',
         'persona_routine',
         'persona_goal',
         'persona_experience',
@@ -214,7 +235,7 @@ export class UserStatusService {
             entityId: userId,
             roomId,
             tableName,
-            count: 1
+            count: 1,
           });
           if (memories.length > 0) {
             hasPersonaData = true;
@@ -233,7 +254,7 @@ export class UserStatusService {
             entityId: userId,
             roomId,
             tableName,
-            count: 1
+            count: 1,
           });
           if (memories.length > 0) {
             hasConnectionData = true;
@@ -247,7 +268,9 @@ export class UserStatusService {
       const hasCompletedOnboarding = hasPersonaData && hasConnectionData;
       return hasCompletedOnboarding;
     } catch (error) {
-      logger.error(`[discover-connection] UserStatusService: Error checking onboarding completion for ${userId}: ${error}`);
+      logger.error(
+        `[discover-connection] UserStatusService: Error checking onboarding completion for ${userId}: ${error}`
+      );
       return false;
     }
   }
@@ -259,16 +282,18 @@ export class UserStatusService {
     try {
       const statusRecords = await this.runtime.getMemories({
         tableName: 'user_status',
-        count
+        count,
       });
 
       const usersWithStatus = statusRecords
-        .filter(record => record.content.status === status)
-        .map(record => record.entityId);
+        .filter((record) => record.content.status === status)
+        .map((record) => record.entityId);
 
       return usersWithStatus;
     } catch (error) {
-      logger.error(`[discover-connection] UserStatusService: Error getting users by status ${status}: ${error}`);
+      logger.error(
+        `[discover-connection] UserStatusService: Error getting users by status ${status}: ${error}`
+      );
       return [];
     }
   }
@@ -291,25 +316,27 @@ export class UserStatusService {
       const statusHistory = await this.runtime.getMemories({
         tableName: 'user_status',
         entityId: userId,
-        count: 10
+        count: 10,
       });
 
       return {
         status,
         hasOnboardingData,
         isGroupMember,
-        statusHistory: statusHistory.map(record => ({
+        statusHistory: statusHistory.map((record) => ({
           status: record.content.status,
           previousStatus: record.content.previousStatus,
-          updatedAt: record.content.updatedAt
-        }))
+          updatedAt: record.content.updatedAt,
+        })),
       };
     } catch (error) {
-      logger.error(`[discover-connection] UserStatusService: Error getting status info for ${userId}: ${error}`);
+      logger.error(
+        `[discover-connection] UserStatusService: Error getting status info for ${userId}: ${error}`
+      );
       return {
         status: UserStatus.ONBOARDING,
         hasOnboardingData: false,
-        isGroupMember: false
+        isGroupMember: false,
       };
     }
   }

@@ -115,7 +115,10 @@ Remember: Your goal is to help them discover new meaningful connections. Focus o
           logger.info(
             `[user-status-provider] DEBUG - User ${message.entityId} has verification data, transitioning to VERIFICATION_PENDING`
           );
-          await userStatusService.transitionUserStatus(message.entityId, UserStatus.VERIFICATION_PENDING);
+          await userStatusService.transitionUserStatus(
+            message.entityId,
+            UserStatus.VERIFICATION_PENDING
+          );
 
           return {
             values: {
@@ -267,7 +270,6 @@ Remember: Your goal is to help them build trust within the Circles community whi
         },
         text: '',
       };
-
     } catch (error) {
       logger.error(`[user-status-provider] Error getting user status context: ${error}`);
       return {

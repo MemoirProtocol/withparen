@@ -29,11 +29,13 @@ export const joinGroupAction: Action = {
     try {
       const userStatusService = new UserStatusService(runtime);
       const userStatus = await userStatusService.getUserStatus(message.entityId);
-      
+
       // Allow ONBOARDING, UNVERIFIED_MEMBER, and VERIFICATION_PENDING statuses
-      if (userStatus !== UserStatus.ONBOARDING && 
-          userStatus !== UserStatus.UNVERIFIED_MEMBER && 
-          userStatus !== UserStatus.VERIFICATION_PENDING) {
+      if (
+        userStatus !== UserStatus.ONBOARDING &&
+        userStatus !== UserStatus.UNVERIFIED_MEMBER &&
+        userStatus !== UserStatus.VERIFICATION_PENDING
+      ) {
         return false;
       }
 
@@ -87,7 +89,7 @@ export const joinGroupAction: Action = {
             logger.info(
               `[discover-connection] Ensured trust record exists for already-trusted user ${message.entityId}`
             );
-            
+
             // Ensure user status is GROUP_MEMBER
             const userStatusService = new UserStatusService(runtime);
             await userStatusService.transitionUserStatus(message.entityId, UserStatus.GROUP_MEMBER);
@@ -218,7 +220,7 @@ You're now part of our DataDAO and have access to daily match services!${trustIn
           logger.info(
             `[discover-connection] Recorded user ${message.entityId} as trusted with wallet ${walletAddress}`
           );
-          
+
           // Transition user status to GROUP_MEMBER
           const userStatusService = new UserStatusService(runtime);
           await userStatusService.transitionUserStatus(message.entityId, UserStatus.GROUP_MEMBER);

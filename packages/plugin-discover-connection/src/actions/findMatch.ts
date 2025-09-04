@@ -49,17 +49,16 @@ export const findMatchAction: Action = {
 
       const userMatches = matches.filter((match) => {
         const matchData = match.content as any;
-        return (
-          matchData.user1Id === message.entityId ||
-          matchData.user2Id === message.entityId
-        );
+        return matchData.user1Id === message.entityId || matchData.user2Id === message.entityId;
       });
 
       // Check for matches that need user attention (using new status system)
       const pendingMatches = userMatches.filter((match) => {
         const matchData = match.content as any;
-        return matchData.status === MatchStatus.MATCH_FOUND ||
-          matchData.status === MatchStatus.PROPOSAL_PENDING;
+        return (
+          matchData.status === MatchStatus.MATCH_FOUND ||
+          matchData.status === MatchStatus.PROPOSAL_PENDING
+        );
       });
 
       // If user has pending matches that need attention, don't allow more FIND_MATCH calls
@@ -376,7 +375,10 @@ export const findMatchAction: Action = {
           // Update user status to unverified_member since they found no matches but need to join group
           try {
             const userStatusService = new UserStatusService(runtime);
-            await userStatusService.transitionUserStatus(message.entityId, UserStatus.UNVERIFIED_MEMBER);
+            await userStatusService.transitionUserStatus(
+              message.entityId,
+              UserStatus.UNVERIFIED_MEMBER
+            );
             logger.info(
               `[discover-connection] DEBUG - FIND_MATCH Transitioned user ${message.entityId} to UNVERIFIED_MEMBER status (no matches found)`
             );
@@ -496,7 +498,8 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
         // Only generate membership message for non-group members
         if (!isUserGroupMember) {
           // Static membership guidance message for users not in Paren's group
-          const membershipMessage = "Now before I introduce you, I like to add you to my network by trusting you into my Circles group. If you're already a member in Circles network, please share your Metri account address so I can add you. If not, I still match you with like minded people who may also invite you to Circles network.";
+          const membershipMessage =
+            "Now before I introduce you, I like to add you to my network by trusting you into my Circles group. If you're already a member in Circles network, please share your Metri account address so I can add you. If not, I still match you with like minded people who may also invite you to Circles network.";
 
           finalResponseText = responseText + '\n\n' + membershipMessage;
         }
@@ -589,7 +592,10 @@ Looking for: ${matchConnectionContext.length > 0 ? matchConnectionContext[0].con
 
           // Update user status to unverified_member (they've found a match but may need verification)
           const userStatusService = new UserStatusService(runtime);
-          await userStatusService.transitionUserStatus(message.entityId, UserStatus.UNVERIFIED_MEMBER);
+          await userStatusService.transitionUserStatus(
+            message.entityId,
+            UserStatus.UNVERIFIED_MEMBER
+          );
         } else {
           logger.info(
             `[discover-connection] Match already exists between ${message.entityId} and ${matchedUserId}, skipping duplicate creation`

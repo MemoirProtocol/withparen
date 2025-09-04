@@ -92,9 +92,7 @@ export class ProposalQuotaService {
 
       await this.saveQuotaInfo(updatedQuota);
       const statusLabel = userStatus === UserStatus.GROUP_MEMBER ? 'member' : 'non-member';
-      logger.info(
-        `[proposal-quota] Recorded proposal for ${statusLabel} ${userId}`
-      );
+      logger.info(`[proposal-quota] Recorded proposal for ${statusLabel} ${userId}`);
     } catch (error) {
       logger.error(`[proposal-quota] Error recording proposal for ${userId}:`, error);
       throw error;

@@ -41,7 +41,10 @@ export const introProposalAction: Action = {
       const userStatusService = new UserStatusService(runtime);
       const userStatus = await userStatusService.getUserStatus(message.entityId);
 
-      if (userStatus !== UserStatus.VERIFICATION_PENDING && userStatus !== UserStatus.GROUP_MEMBER) {
+      if (
+        userStatus !== UserStatus.VERIFICATION_PENDING &&
+        userStatus !== UserStatus.GROUP_MEMBER
+      ) {
         return false;
       }
 
@@ -66,10 +69,7 @@ export const introProposalAction: Action = {
       // Check quota before validation passes
       try {
         const quotaService = new ProposalQuotaService(runtime);
-        const canSendProposal = await quotaService.canSendProposal(
-          message.entityId,
-          userStatus
-        );
+        const canSendProposal = await quotaService.canSendProposal(message.entityId, userStatus);
 
         if (!canSendProposal) {
           return false;
@@ -106,10 +106,7 @@ export const introProposalAction: Action = {
       const canSendProposal = await quotaService.canSendProposal(message.entityId, userStatus);
 
       if (!canSendProposal) {
-        const quotaStatus = await quotaService.getQuotaStatusMessage(
-          message.entityId,
-          userStatus
-        );
+        const quotaStatus = await quotaService.getQuotaStatusMessage(message.entityId, userStatus);
         const quotaErrorText = `You've reached your introduction request limit. ${quotaStatus}`;
 
         if (callback) {
@@ -223,20 +220,28 @@ export const introProposalAction: Action = {
           let verificationParts: string[] = [];
 
           // Only include Metri account if it exists and is not placeholder text
-          if (verificationData.metriAccount &&
+          if (
+            verificationData.metriAccount &&
             verificationData.metriAccount !== 'Not provided' &&
             verificationData.metriAccount !== 'None provided' &&
-            verificationData.metriAccount.trim() !== '') {
+            verificationData.metriAccount.trim() !== ''
+          ) {
             verificationParts.push(`Metri Account: ${verificationData.metriAccount}`);
           }
 
           // Only include social links if they exist and are not placeholder text
-          if (verificationData.socialLinks &&
+          if (
+            verificationData.socialLinks &&
             verificationData.socialLinks.length > 0 &&
-            !verificationData.socialLinks.some((link: string) =>
-              link === 'Not provided' || link === 'None provided' || link.trim() === '')) {
-            const validLinks = verificationData.socialLinks.filter((link: string) =>
-              link && link !== 'Not provided' && link !== 'None provided' && link.trim() !== '');
+            !verificationData.socialLinks.some(
+              (link: string) =>
+                link === 'Not provided' || link === 'None provided' || link.trim() === ''
+            )
+          ) {
+            const validLinks = verificationData.socialLinks.filter(
+              (link: string) =>
+                link && link !== 'Not provided' && link !== 'None provided' && link.trim() !== ''
+            );
             if (validLinks.length > 0) {
               verificationParts.push(`Social Links: ${validLinks.join(', ')}`);
             }
