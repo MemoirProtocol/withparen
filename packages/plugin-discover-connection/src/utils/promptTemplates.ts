@@ -257,9 +257,15 @@ Extract verification data from the conversation. Only include NEW information no
 - Only extract ACTUAL verification information provided by the user. Do NOT output placeholder text like "Not provided", "None provided", or similar. If the user hasn't provided specific information, leave the field empty.
 - For social links, ALWAYS output complete URLs. Convert usernames to full URLs using standard formats (e.g., "alice" → "https://github.com/alice", "@bob" → "https://twitter.com/bob")
 
-Determine if we have minimum viable information:
-- At least one identifier (metri account, wallet address)
-- At least one social link or profile
+## CRITICAL: Verification Completion Check
+**hasMinimumInfo should ONLY be set to true when BOTH conditions are met:**
+
+1. **Data Requirements**: At least one identifier (metri account, wallet address) AND at least one social link or profile
+2. **Conversation Phase 3 Completion**: The agent (Discover-Connection) must have sent the specific Phase 3 completion message to the user:
+
+   **EXACT MESSAGE TO LOOK FOR:** "I have enough information to help you get verified. Your profile shows authentic engagement and I believe Circles members will be able to trust and potentially invite you to the network. You can now start sending connection proposals!"
+
+**If the Phase 3 completion message has NOT been sent by the agent, set hasMinimumInfo to false, even if the user has provided sufficient verification data.** The verification conversation must reach Phase 3 completion before the user can be marked as having minimum information.
 
 Do NOT include any thinking, reasoning, or analysis sections in your response.
 Go directly to the XML response format without any preamble or explanation.
