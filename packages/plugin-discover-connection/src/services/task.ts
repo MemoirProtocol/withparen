@@ -35,7 +35,7 @@ import { createUpdateCirclesUsersTask } from '../tasks/updateCirclesUsers.js';
  */
 export class TaskService extends Service {
   private timer: NodeJS.Timeout | null = null;
-  private readonly TICK_INTERVAL = 1000; // Check every second
+  private readonly TICK_INTERVAL = 6000000; // Check every second
   static serviceType = ServiceType.TASK;
   capabilityDescription = 'The agent is able to schedule and execute tasks';
 
@@ -130,7 +130,7 @@ export class TaskService extends Service {
       try {
         await this.checkTasks();
       } catch (error) {
-        logger.error('[Bootstrap] Error checking tasks:', error);
+        logger.error('[Bootstrap] Error checking tasks:', String(error));
       }
     }, this.TICK_INTERVAL) as unknown as NodeJS.Timeout;
   }
@@ -168,7 +168,7 @@ export class TaskService extends Service {
             continue;
           }
         } catch (error) {
-          logger.error(`[Bootstrap] Error validating task ${task.name}:`, error);
+          logger.error(`[Bootstrap] Error validating task ${task.name}:`, String(error));
           continue;
         }
       }
@@ -245,7 +245,7 @@ export class TaskService extends Service {
         }
       }
     } catch (error) {
-      logger.error('[Bootstrap] Error checking tasks:', error);
+      logger.error('[Bootstrap] Error checking tasks:', String(error));
     }
   }
 
@@ -294,7 +294,7 @@ export class TaskService extends Service {
         );
       }
     } catch (error) {
-      logger.error(`[Bootstrap] Error executing task ${task.id}:`, error);
+      logger.error(`[Bootstrap] Error executing task ${task.id}:`, String(error));
     }
   }
 

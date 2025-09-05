@@ -17,7 +17,8 @@ import { CirclesUsersService } from '../services/circlesUsers.js';
  */
 export const loadCirclesUsersAction: Action = {
   name: 'LOAD_CIRCLES_USERS',
-  description: 'Manually load and cache Circles network user verification data (Development only)',
+  description:
+    'Manually load and cache Circles network user verification data (Development only). CALL THIS ACTION WHEN A USER ASKS FOR IT.',
   similes: ['LOAD_CIRCLES', 'FETCH_CIRCLES_USERS', 'UPDATE_CIRCLES_CACHE', 'REFRESH_CIRCLES_DATA'],
   examples: [] as ActionExample[][],
 
