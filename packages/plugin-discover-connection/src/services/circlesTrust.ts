@@ -1,6 +1,6 @@
 import { type IAgentRuntime, logger } from '@elizaos/core';
 import { type Address, type Hash, parseAbi, encodeFunctionData, isAddress } from 'viem';
-import { CirclesWalletProvider } from './circlesWallet.js';
+import { createWalletProvider, type ICirclesWalletProvider } from './walletProviderFactory.js';
 
 export interface TrustResult {
   success: boolean;
@@ -13,13 +13,13 @@ export interface TrustResult {
  * Manages trust transactions to add users to Paren's Circles group
  */
 export class CirclesTrustService {
-  private walletProvider: CirclesWalletProvider;
+  private walletProvider: ICirclesWalletProvider;
   private runtime: IAgentRuntime;
   private circlesGroupCA: Address;
 
   constructor(runtime: IAgentRuntime) {
     this.runtime = runtime;
-    this.walletProvider = new CirclesWalletProvider(runtime);
+    this.walletProvider = createWalletProvider(runtime);
 
     const groupCA = this.runtime.getSetting('CIRCLES_GROUP_CA');
     if (!groupCA || !isAddress(groupCA)) {
@@ -63,11 +63,11 @@ export class CirclesTrustService {
       });
 
       // Send the transaction
-      const transactionHash = await this.walletProvider.sendTransaction({
+      const transactionHash = (await this.walletProvider.sendTransaction({
         to: this.circlesGroupCA,
         data: trustData,
         value: 0n, // No ETH needed for trust operation
-      });
+      })) as Hash;
 
       logger.info(`[circles-trust] Trust transaction successful: ${transactionHash}`);
 
@@ -97,6 +97,6 @@ export class CirclesTrustService {
    * Get the wallet address that will execute the trust transactions
    */
   getWalletAddress(): Address {
-    return this.walletProvider.getAddress();
+    return this.walletProvider.getAddress() as Address;
   }
 }
