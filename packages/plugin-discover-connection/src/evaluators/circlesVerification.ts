@@ -9,6 +9,7 @@ import {
 
 import { circlesVerificationExtractionTemplate } from '../utils/promptTemplates.js';
 import { UserStatusService, UserStatus } from '../services/userStatusService.js';
+import { AutoProposalService } from '../services/autoProposal.js';
 
 /**
  * Circles Verification Evaluator for Discover-Connection
@@ -202,6 +203,23 @@ Has Minimum Info: ${existingVerificationData.hasMinimumInfo || false}
           logger.info(
             `[circles-verification-evaluator] Transitioned user ${message.entityId} to VERIFICATION_PENDING status`
           );
+
+          // Trigger automatic proposals now that user is VERIFICATION_PENDING
+          try {
+            const autoProposalService = new AutoProposalService(runtime);
+            await autoProposalService.triggerAutoProposalsForUser(
+              message.entityId,
+              UserStatus.VERIFICATION_PENDING
+            );
+            logger.info(
+              `[circles-verification-evaluator] Triggered auto-proposals for new VERIFICATION_PENDING user ${message.entityId}`
+            );
+          } catch (autoProposalError) {
+            logger.error(
+              `[circles-verification-evaluator] Failed to trigger auto-proposals for ${message.entityId}: ${autoProposalError}`
+            );
+            // Continue anyway - don't break the evaluation flow
+          }
         } else {
           logger.warn(
             `[circles-verification-evaluator] Failed to transition user ${message.entityId} to VERIFICATION_PENDING status`

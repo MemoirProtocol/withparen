@@ -9,6 +9,7 @@ import {
   type State,
   type Task,
 } from '@elizaos/core';
+import { createUpdateCirclesUsersTask } from '../tasks/updateCirclesUsers.js';
 
 /**
  * TaskService class representing a service that schedules and executes tasks.
@@ -46,6 +47,17 @@ export class TaskService extends Service {
   static async start(runtime: IAgentRuntime): Promise<Service> {
     const service = new TaskService(runtime);
     await service.startTimer();
+
+    // Initialize Circles users update task
+    try {
+      await createUpdateCirclesUsersTask(runtime);
+      logger.info('[discover-connection] TaskService: Circles users update task initialized');
+    } catch (error) {
+      logger.error(
+        `[discover-connection] TaskService: Failed to initialize Circles users task: ${error}`
+      );
+    }
+
     // await service.createTestTasks();
     return service;
   }

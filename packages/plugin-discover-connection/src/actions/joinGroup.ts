@@ -12,6 +12,9 @@ import { isAddress, type Address } from 'viem';
 import { CirclesTrustService } from '../services/circlesTrust.js';
 import { UserTrustStatusService } from '../services/userTrustStatus.js';
 import { UserStatusService, UserStatus } from '../services/userStatusService.js';
+import { CirclesUsersService } from '../services/circlesUsers.js';
+import { UserWalletService } from '../services/userWallet.js';
+import { AutoProposalService } from '../services/autoProposal.js';
 
 /**
  * Join Group Action for Discover-Connection
@@ -41,7 +44,7 @@ export const joinGroupAction: Action = {
 
       // Check if user is providing a wallet address
       const messageText = message.content.text || '';
-      const hasWalletAddress = messageText.includes('0x') && messageText.length >= 40;
+      const hasWalletAddress = messageText.includes('0x');
 
       if (!hasWalletAddress) {
         return false;
@@ -96,6 +99,24 @@ export const joinGroupAction: Action = {
             logger.info(
               `[discover-connection] Ensured user ${message.entityId} has GROUP_MEMBER status`
             );
+
+            // Trigger automatic proposals for already-trusted GROUP_MEMBER
+            try {
+              const autoProposalService = new AutoProposalService(runtime);
+              await autoProposalService.triggerAutoProposalsForUser(
+                message.entityId,
+                UserStatus.GROUP_MEMBER,
+                callback
+              );
+              logger.info(
+                `[discover-connection] Triggered auto-proposals for already-trusted GROUP_MEMBER ${message.entityId}`
+              );
+            } catch (autoProposalError) {
+              logger.error(
+                `[discover-connection] Failed to trigger auto-proposals for already-trusted ${message.entityId}: ${autoProposalError}`
+              );
+              // Continue anyway - don't break the user flow
+            }
           } catch (trustRecordError) {
             logger.error(
               `[discover-connection] Failed to ensure trust record for already-trusted user ${message.entityId}: ${trustRecordError}`
@@ -176,6 +197,130 @@ You're now part of our DataDAO and have access to daily match services!${trustIn
         };
       }
 
+      // Check Circles network status before proceeding with trust transaction
+      logger.info(`[discover-connection] Checking Circles status for wallet: ${walletAddress}`);
+
+      const circlesUsersService = new CirclesUsersService(runtime);
+      const userStatus = await circlesUsersService.checkUserStatus(walletAddress);
+
+      // Handle unregistered wallets
+      if (!userStatus.found) {
+        const unregisteredText = `This wallet address is not registered on the Circles network.
+
+To join our group, you first need to:
+1. Create an account at https://metri.xyz
+2. Register your wallet address
+3. Return here with your registered wallet address
+
+Once you're registered on Metri, I'll be happy to help you join our network!`;
+
+        // Store wallet address even if unregistered for future reference
+        const userWalletService = new UserWalletService(runtime);
+        try {
+          await userWalletService.setUserWallet(message.entityId, walletAddress);
+          logger.info(
+            `[discover-connection] Stored unregistered wallet ${walletAddress} for user ${message.entityId}`
+          );
+        } catch (walletError) {
+          logger.error(
+            `[discover-connection] Failed to store unregistered wallet for ${message.entityId}: ${walletError}`
+          );
+        }
+
+        // Set user as UNVERIFIED_MEMBER to guide them through verification
+        const userStatusService = new UserStatusService(runtime);
+        await userStatusService.transitionUserStatus(
+          message.entityId,
+          UserStatus.UNVERIFIED_MEMBER
+        );
+
+        if (callback) {
+          await callback({
+            text: unregisteredText,
+            actions: ['REPLY'],
+          });
+        }
+
+        return {
+          text: unregisteredText,
+          success: false,
+          values: {
+            walletAddress,
+            circlesStatus: 'unregistered',
+            actionTaken: 'set_unverified_status',
+          },
+          error: new Error('Wallet not registered on Circles network'),
+        };
+      }
+
+      // Handle registered but unverified users (less than 3 trusts)
+      if (userStatus.registered && !userStatus.verified) {
+        const trustsNeeded = userStatus.needsTrusts || 0;
+        const unverifiedText = `Your wallet is registered on Circles but needs additional trust to be verified.
+
+📊 **Current Status:**
+• Trust connections: ${userStatus.trustCount}/3 required
+• Trusts needed: ${trustsNeeded} more
+
+I can help you get verified by:
+• Introducing you to members in my network
+• Guiding you through the verification process
+• Connecting you with people who share your passion
+
+Now I like to ask some social links from you so people I introduce you to can see if they like to trust you`;
+
+        // Store wallet address for registered but unverified user
+        const userWalletService = new UserWalletService(runtime);
+        try {
+          await userWalletService.setUserWallet(message.entityId, walletAddress);
+          logger.info(
+            `[discover-connection] Stored registered wallet ${walletAddress} for user ${message.entityId} (${userStatus.trustCount} trusts)`
+          );
+        } catch (walletError) {
+          logger.error(
+            `[discover-connection] Failed to store registered wallet for ${message.entityId}: ${walletError}`
+          );
+        }
+
+        // Set user as UNVERIFIED_MEMBER to guide them through verification process
+        const userStatusService = new UserStatusService(runtime);
+        await userStatusService.transitionUserStatus(
+          message.entityId,
+          UserStatus.UNVERIFIED_MEMBER
+        );
+
+        logger.info(
+          `[discover-connection] User ${message.entityId} has registered but unverified wallet (${userStatus.trustCount} trusts)`
+        );
+
+        if (callback) {
+          await callback({
+            text: unverifiedText,
+            actions: ['REPLY'],
+          });
+        }
+
+        return {
+          text: unverifiedText,
+          success: false,
+          values: {
+            walletAddress,
+            circlesStatus: 'registered_unverified',
+            trustCount: userStatus.trustCount,
+            trustsNeeded,
+            actionTaken: 'set_unverified_status',
+          },
+          error: new Error(
+            `Wallet registered but not verified (${userStatus.trustCount}/3 trusts)`
+          ),
+        };
+      }
+
+      // User is verified (3+ trusts), proceed with normal group joining flow
+      logger.info(
+        `[discover-connection] User ${message.entityId} has verified Circles wallet with ${userStatus.trustCount} trusts`
+      );
+
       // Initialize the Circles trust service
       try {
         const circlesTrustService = new CirclesTrustService(runtime);
@@ -221,6 +366,25 @@ You're now part of our DataDAO and have access to daily match services!${trustIn
             `[discover-connection] Recorded user ${message.entityId} as trusted with wallet ${walletAddress}`
           );
 
+          // Store wallet address in UserWalletService with trust info
+          const userWalletService = new UserWalletService(runtime);
+          try {
+            await userWalletService.setUserWallet(
+              message.entityId,
+              walletAddress,
+              trustResult.transactionHash,
+              parenCirclesCA
+            );
+            logger.info(
+              `[discover-connection] Stored verified wallet ${walletAddress} for user ${message.entityId}`
+            );
+          } catch (walletError) {
+            logger.error(
+              `[discover-connection] Failed to store verified wallet for ${message.entityId}: ${walletError}`
+            );
+            // Continue anyway - don't break the user flow
+          }
+
           // Transition user status to GROUP_MEMBER
           const userStatusService = new UserStatusService(runtime);
           await userStatusService.transitionUserStatus(message.entityId, UserStatus.GROUP_MEMBER);
@@ -228,30 +392,20 @@ You're now part of our DataDAO and have access to daily match services!${trustIn
             `[discover-connection] Transitioned user ${message.entityId} to GROUP_MEMBER status`
           );
 
-          // Store wallet address in memory with type 'wallet_address'
+          // Trigger automatic proposals now that user is a GROUP_MEMBER
           try {
-            const walletAddressRecord = {
-              entityId: message.entityId,
-              agentId: runtime.agentId,
-              roomId: message.roomId,
-              content: {
-                walletAddress: walletAddress,
-                type: 'wallet_address',
-                text: `Wallet address for user ${message.entityId}: ${walletAddress}`,
-                trustTransactionHash: trustResult.transactionHash,
-                trustedAt: Date.now(),
-                parenCirclesCA: parenCirclesCA,
-              },
-              createdAt: Date.now(),
-            };
-
-            await runtime.createMemory(walletAddressRecord, 'memories');
-            logger.info(
-              `[discover-connection] Stored wallet address ${walletAddress} in memory for user ${message.entityId}`
+            const autoProposalService = new AutoProposalService(runtime);
+            await autoProposalService.triggerAutoProposalsForUser(
+              message.entityId,
+              UserStatus.GROUP_MEMBER,
+              callback
             );
-          } catch (walletStorageError) {
+            logger.info(
+              `[discover-connection] Triggered auto-proposals for new GROUP_MEMBER ${message.entityId}`
+            );
+          } catch (autoProposalError) {
             logger.error(
-              `[discover-connection] Failed to store wallet address for ${message.entityId}: ${walletStorageError}`
+              `[discover-connection] Failed to trigger auto-proposals for ${message.entityId}: ${autoProposalError}`
             );
             // Continue anyway - don't break the user flow
           }

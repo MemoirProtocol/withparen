@@ -12,7 +12,6 @@ import {
   type UUID,
 } from '@elizaos/core';
 
-import { UserTrustStatusService } from '../services/userTrustStatus.js';
 import { UserStatusService, UserStatus, MatchStatus } from '../services/userStatusService.js';
 
 import {
@@ -305,20 +304,24 @@ export const findMatchAction: Action = {
         `[discover-connection] Found ${matchedUserIds.size} existing matches for user ${message.entityId}`
       );
 
-      // Get all trusted users first - only trusted users can be matched
-      const userTrustService = new UserTrustStatusService(runtime);
-      const allTrustedUsers = await userTrustService.getAllTrustedUsers(200); // Get more trusted users
-      const trustedUserIds = new Set(allTrustedUsers.map((user) => user.userId));
+      // Get all GROUP_MEMBER users first - only group members can be matched
+      const userStatusService = new UserStatusService(runtime);
+      const allGroupMemberIds = await userStatusService.getUsersByStatus(
+        UserStatus.GROUP_MEMBER,
+        200
+      );
+      const groupMemberIds = new Set(allGroupMemberIds);
 
       logger.info(
-        `[discover-connection] Found ${trustedUserIds.size} trusted users for matching pool`
+        `[discover-connection] Found ${groupMemberIds.size} group members for matching pool`
       );
 
       // Check requesting user's group membership early to handle no-match scenarios appropriately
-      const isUserGroupMember = await userTrustService.isUserTrusted(message.entityId);
+      const requestingUserStatus = await userStatusService.getUserStatus(message.entityId);
+      const isUserGroupMember = requestingUserStatus === UserStatus.GROUP_MEMBER;
 
       logger.info(
-        `[discover-connection] DEBUG - FIND_MATCH User ${message.entityId} group membership: ${isUserGroupMember} (trusted user check)`
+        `[discover-connection] DEBUG - FIND_MATCH User ${message.entityId} group membership: ${isUserGroupMember} (status: ${requestingUserStatus})`
       );
 
       // Check available data for connection discovery
@@ -328,7 +331,7 @@ export const findMatchAction: Action = {
       });
 
       logger.info(
-        `[discover-connection] Starting connection discovery with ${allPersonaContexts.length} total persona contexts, filtering to trusted users only`
+        `[discover-connection] Starting connection discovery with ${allPersonaContexts.length} total persona contexts, filtering to GROUP_MEMBER users only`
       );
 
       // Perform vector similarity search for potential matches
@@ -349,13 +352,16 @@ export const findMatchAction: Action = {
           match_threshold: 0.4, // Reasonable threshold for good matches
         });
 
-        // Filter out the requesting user and already matched users from potential matches
+        // Filter out the requesting user, already matched users, and non-group members from potential matches
         potentialMatches = potentialMatches.filter(
-          (match) => match.entityId !== message.entityId && !matchedUserIds.has(match.entityId)
+          (match) =>
+            match.entityId !== message.entityId &&
+            !matchedUserIds.has(match.entityId) &&
+            groupMemberIds.has(match.entityId)
         );
 
         logger.info(
-          `[discover-connection] Found ${potentialMatches.length} potential matches (excluding self and existing matches)`
+          `[discover-connection] Found ${potentialMatches.length} potential matches (excluding self, existing matches, and non-group members)`
         );
       } catch (error) {
         logger.warn(`[discover-connection] Vector search failed: ${error}`);
@@ -368,7 +374,7 @@ export const findMatchAction: Action = {
         if (!isUserGroupMember) {
           // For non-members: invite them to join the group (no fake match record needed)
           noMatchText =
-            trustedUserIds.size === 0
+            groupMemberIds.size === 0
               ? "There aren't any available matches in my network right now. However, you can already join my Circles group!\n\nAs a member, you'll:\n• Get matching with other members\n• Be discoverable by new members seeking connections like you\n• Being part of my DataDAO\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification."
               : "There aren't any available matches in my network right now. However, you can already join my Circles group!\n\nAs a member, you'll:\n• Get matching with other members\n• Be discoverable by new members seeking connections like you\n• Being part of my DataDAO\n\nWould you like to join? If you're already verified in Circles, please share your wallet address. If not, I can help you get the trust connections needed for verification.";
 
@@ -389,11 +395,11 @@ export const findMatchAction: Action = {
             // Continue anyway - don't break the user flow
           }
         } else {
-          // For existing members: standard no-match message
+          // For existing group members: standard no-match message
           noMatchText =
-            trustedUserIds.size === 0
-              ? "There aren't any other trusted Circles members available for matching right now. Encourage others to join Paren's Circles group to expand the trusted matching pool!"
-              : "I couldn't find a compatible match among the current trusted Circles members, but I'll keep checking as more people join the group. I'll notify you when I find a suitable connection!";
+            groupMemberIds.size <= 1
+              ? "There aren't any other group members available for matching right now. Encourage others to join Paren's Circles group to expand the matching pool!"
+              : "I couldn't find a compatible match among the current group members, but I'll keep checking as more people join the group. I'll notify you when I find a suitable connection!";
         }
 
         if (callback) {
@@ -416,7 +422,7 @@ export const findMatchAction: Action = {
             connectionContext,
             matchScore: 0,
             reasoning: isUserGroupMember
-              ? 'No potential matches found among trusted Circles members - need more trusted users'
+              ? 'No potential matches found among group members - need more group members'
               : 'No matches found - user invited to join group to expand opportunities',
             isUserGroupMember,
           },

@@ -17,9 +17,7 @@ export const character: Character = {
   ],
   settings: {
     chains: {
-      "evm": [
-        "gnosis"
-      ]
+      evm: ['gnosis'],
     },
     clients: ['telegram'],
     allowDirectMessages: 'true',

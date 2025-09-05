@@ -10,7 +10,12 @@ export { ignoreAction } from './ignore';
 //export { muteRoomAction } from './muteRoom';
 export { noneAction } from './none';
 export { replyAction } from './reply';
-export { seedTestDataAction } from './seedTestData'; // Development helper for testing
+
+// Admin actions (exported unconditionally for build compatibility)
+// Note: These actions have internal validation to only work in development/test environments
+export { loadCirclesUsersAction } from './loadCirclesUsers';
+export { refreshCirclesUsersAction } from './refreshCirclesUsers';
+export { seedTestDataAction } from './seedTestData';
 //export { updateRoleAction } from './roles';
 //export { sendMessageAction } from './sendMessage';
 //export { updateSettingsAction } from './settings';

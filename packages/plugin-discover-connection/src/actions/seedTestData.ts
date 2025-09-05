@@ -30,7 +30,7 @@ export const seedTestDataAction: Action = {
     const isDev =
       process.env.NODE_ENV === 'development' ||
       process.env.NODE_ENV === 'test' ||
-      process.env.ALLOW_TEST_SEEDING === 'true';
+      process.env.ALLOW_ADMIN_ACTIONS === 'true';
 
     if (!isDev) {
       logger.warn(

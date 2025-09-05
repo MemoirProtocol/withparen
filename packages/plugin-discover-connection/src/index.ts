@@ -32,6 +32,7 @@ import {
   getLocalServerUrl,
 } from '@elizaos/core';
 import { v4 } from 'uuid';
+import { isAddress } from 'viem';
 
 import * as actions from './actions/index.ts';
 import * as evaluators from './evaluators/index.ts';
@@ -312,6 +313,7 @@ export function shouldBypassShouldRespond(
 
 /**
  * Checks for auto-trigger conditions and executes appropriate actions
+ * This is now a wrapper around the centralized AutoProposalService
  */
 const checkAutoTriggerConditions = async (
   runtime: IAgentRuntime,
@@ -319,84 +321,81 @@ const checkAutoTriggerConditions = async (
   callback: any
 ): Promise<void> => {
   try {
-    // Import UserStatusService and MatchStatus for new status system
-    const { UserStatusService, UserStatus, MatchStatus } = await import(
-      './services/userStatusService.js'
-    );
+    // Import services for status checking and auto-proposals
+    const { UserStatusService } = await import('./services/userStatusService.js');
+    const { AutoProposalService } = await import('./services/autoProposal.js');
 
-    // Check if user has verification status and matches ready for proposals
+    // Check user status and trigger auto-proposals if eligible
     const userStatusService = new UserStatusService(runtime);
     const userStatus = await userStatusService.getUserStatus(message.entityId);
 
-    // Only auto-trigger if user can send proposals (has provided verification data)
-    if (userStatus !== UserStatus.VERIFICATION_PENDING && userStatus !== UserStatus.GROUP_MEMBER) {
-      logger.debug(
-        `[discover-connection] Auto-trigger skipped: User ${message.entityId} status ${userStatus} cannot send proposals`
-      );
-      return;
-    }
-
-    const matches = await runtime.getMemories({
-      tableName: 'matches',
-      count: 50,
-    });
-
-    const readyMatches = matches.filter((match) => {
-      const matchData = match.content as any;
-      return (
-        (matchData.user1Id === message.entityId || matchData.user2Id === message.entityId) &&
-        matchData.status === MatchStatus.MATCH_FOUND
-      );
-    });
-
-    if (readyMatches.length > 0) {
-      logger.info(
-        `[discover-connection] Auto-trigger condition met: User ${message.entityId} (status: ${userStatus}) has ${readyMatches.length} matches ready for proposals`
-      );
-
-      // Create a synthetic message to trigger the INTRO_PROPOSAL action
-      const introMessage = {
-        ...message,
-        content: {
-          text: 'Please send the introduction proposal to my match.',
-          attachments: [],
-        },
-      };
-
-      // Check if the intro proposal action would validate
-      const introProposalAction = runtime.actions.find(
-        (action) => action.name === 'INTRO_PROPOSAL'
-      );
-
-      if (introProposalAction) {
-        const isValid = await introProposalAction.validate(runtime, introMessage as Memory);
-
-        if (isValid) {
-          logger.info(
-            `[discover-connection] Auto-triggering INTRO_PROPOSAL action for user ${message.entityId}`
-          );
-
-          // Execute the intro proposal action
-          await introProposalAction.handler(
-            runtime,
-            introMessage as Memory,
-            undefined, // state
-            {}, // options
-            callback
-          );
-        } else {
-          logger.debug(
-            `[discover-connection] INTRO_PROPOSAL validation failed during auto-trigger for user ${message.entityId}`
-          );
-        }
-      } else {
-        logger.warn(
-          '[discover-connection] INTRO_PROPOSAL action not found during auto-trigger check'
-        );
-      }
-    }
+    const autoProposalService = new AutoProposalService(runtime);
+    await autoProposalService.triggerAutoProposalsForUser(message.entityId, userStatus, callback);
   } catch (error) {
     logger.error(`[discover-connection] Error in auto-trigger check: ${error}`);
+  }
+};
+
+/**
+ * Detects if message contains a valid Ethereum wallet address
+ */
+const detectWalletAddress = (text: string): string | null => {
+  const addressMatch = text.match(/0x[a-fA-F0-9]{40}/);
+  if (addressMatch && isAddress(addressMatch[0])) {
+    return addressMatch[0];
+  }
+  return null;
+};
+
+/**
+ * Checks if we should auto-trigger JOIN_GROUP for wallet addresses
+ */
+const checkAutoTriggerWalletJoin = async (
+  runtime: IAgentRuntime,
+  message: Memory,
+  callback: any
+): Promise<boolean> => {
+  try {
+    // Check if message contains a wallet address
+    const walletAddress = detectWalletAddress(message.content.text || '');
+    if (!walletAddress) return false;
+
+    // Import required services
+    const { UserStatusService, UserStatus } = await import('./services/userStatusService.js');
+
+    // Check user status
+    const userStatusService = new UserStatusService(runtime);
+    const userStatus = await userStatusService.getUserStatus(message.entityId);
+
+    // Only auto-trigger for appropriate statuses
+    if (
+      userStatus !== UserStatus.ONBOARDING &&
+      userStatus !== UserStatus.UNVERIFIED_MEMBER &&
+      userStatus !== UserStatus.VERIFICATION_PENDING
+    ) {
+      return false;
+    }
+
+    // Find JOIN_GROUP action
+    const joinGroupAction = runtime.actions.find((action) => action.name === 'JOIN_GROUP');
+
+    if (!joinGroupAction) return false;
+
+    // Validate the action would succeed
+    const isValid = await joinGroupAction.validate(runtime, message);
+    if (!isValid) return false;
+
+    logger.info(
+      `[discover-connection] Auto-triggering JOIN_GROUP for wallet address ${walletAddress} from user ${message.entityId}`
+    );
+
+    // Execute JOIN_GROUP action
+    const result = await joinGroupAction.handler(runtime, message, undefined, {}, callback);
+
+    return result?.success === true;
+  } catch (error) {
+    logger.error(`[discover-connection] Error in wallet auto-trigger: ${error}`);
+    return false;
   }
 };
 
@@ -581,6 +580,20 @@ const messageReceivedHandler = async ({
         console.log('shouldSkipShouldRespond', shouldSkipShouldRespond);
 
         if (shouldRespond) {
+          // Check for auto-trigger wallet join BEFORE LLM processing
+          const autoTriggered = await checkAutoTriggerWalletJoin(runtime, message, callback);
+
+          if (autoTriggered) {
+            logger.info(
+              `[discover-connection] Successfully auto-triggered JOIN_GROUP for message ${message.id}`
+            );
+
+            // Skip LLM processing since we've handled the action
+            await runtime.evaluate(message, state, shouldRespond, callback, []);
+            return;
+          }
+
+          // Continue with normal LLM-based action selection...
           state = await runtime.composeState(message, ['ACTIONS']);
           if (!state.values.actionNames) {
             logger.warn('actionNames data missing from state, even though it was requested');
@@ -1551,20 +1564,31 @@ const events = {
   CONTROL_MESSAGE: [controlMessageHandler],
 };
 
+// Development-only admin actions (only available when NODE_ENV=development|test)
+const isDev =
+  process.env.NODE_ENV === 'development' ||
+  process.env.NODE_ENV === 'test' ||
+  process.env.ALLOW_ADMIN_ACTIONS === 'true';
+
+const baseActions = [
+  actions.findMatchAction,
+  actions.joinGroupAction,
+  actions.introProposalAction,
+  actions.introAcceptAction,
+  actions.passMessageAction,
+  actions.ignoreAction,
+  actions.noneAction,
+];
+
+const adminActions = isDev
+  ? [actions.loadCirclesUsersAction, actions.refreshCirclesUsersAction, actions.seedTestDataAction]
+  : [];
+
 export const discoverConnectionPlugin: Plugin = {
   name: 'discover-connection',
   description:
     'Discover-Connection - AI agent focused on connection discovery based on passions, challenges, and preferences',
-  actions: [
-    actions.findMatchAction,
-    actions.joinGroupAction,
-    actions.introProposalAction,
-    actions.introAcceptAction,
-    actions.passMessageAction,
-    actions.ignoreAction,
-    actions.noneAction,
-    actions.seedTestDataAction, // Development helper for testing
-  ],
+  actions: [...baseActions, ...adminActions],
   // this is jank, these events are not valid
   events: events as any as PluginEvents,
   evaluators: [evaluators.reflectionEvaluator, evaluators.circlesVerificationEvaluator],

@@ -37,7 +37,10 @@ export class UserTrustStatusService {
       logger.debug(`[user-trust] User ${userId} trust status: ${isTrusted}`);
       return isTrusted;
     } catch (error) {
-      logger.error(`[user-trust] Error checking trust status for ${userId}:`, error);
+      logger.error(
+        `[user-trust] Error checking trust status for ${userId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
       return false; // Assume not trusted on error to be safe
     }
   }
@@ -109,7 +112,10 @@ export class UserTrustStatusService {
         `[user-trust] Created trust record for user ${userId} with wallet ${walletAddress}`
       );
     } catch (error) {
-      logger.error(`[user-trust] Error recording trust status for ${userId}:`, error);
+      logger.error(
+        `[user-trust] Error recording trust status for ${userId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
       throw error;
     }
   }
@@ -140,7 +146,10 @@ export class UserTrustStatusService {
         circlesGroupCA: trustData.circlesGroupCA,
       };
     } catch (error) {
-      logger.error(`[user-trust] Error getting trust info for ${userId}:`, error);
+      logger.error(
+        `[user-trust] Error getting trust info for ${userId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
       return null;
     }
   }
@@ -165,7 +174,10 @@ export class UserTrustStatusService {
 
       logger.info(`[user-trust] Removed trust records for user ${userId}`);
     } catch (error) {
-      logger.error(`[user-trust] Error removing trust for ${userId}:`, error);
+      logger.error(
+        `[user-trust] Error removing trust for ${userId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
       throw error;
     }
   }
@@ -192,7 +204,10 @@ export class UserTrustStatusService {
         };
       });
     } catch (error) {
-      logger.error('[user-trust] Error getting all trusted users:', error);
+      logger.error(
+        '[user-trust] Error getting all trusted users:',
+        error instanceof Error ? error.message : String(error)
+      );
       return [];
     }
   }
