@@ -50,6 +50,14 @@ extra
 
 packages/docs/api/*
 
+packages/agent-memoir-withparen
+packages/agentparen
+packages/agentseren
+packages/agentweb
+packages/plugin-deepen-connection
+packages/plugin-serenapp
+
+
 **/dist/**
 
 **/.docusaurus/**

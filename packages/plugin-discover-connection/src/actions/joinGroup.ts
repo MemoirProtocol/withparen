@@ -416,14 +416,12 @@ Now I like to ask some social links from you so people I introduce you to can se
           // Continue anyway - don't break the user flow
         }
 
-        const successText = `Welcome to Paren's Circles group! 🎉
+        const successText = `Welcome to Paren's group! 🎉
 
 You're now a member with access to:
-• DataDAO governance participation
-• Daily personalized match services  
-• Trusted network benefits
+• Daily personalized matchmaking services
 
-You can choose to trust back my group for enhanced features: ${parenCirclesCA}
+Here is my group CA: ${parenCirclesCA}
 
 🔗 View your trust transaction: https://gnosisscan.io/tx/${trustResult.transactionHash}`;
 
