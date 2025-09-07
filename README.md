@@ -1,8 +1,107 @@
-# Eliza
+# A Circles Group as a grassroot DataDAO with matchmaking services
 
-A framework for multi-agent development and deployment
+A DataDAO with matchmaking services among group members. Paren (an ElizaOS agent) manages groups membership, subscription collection and offers semantic matchmaking algorithms focused on shared passions, goals, compatible preferences, and skills.
 
-## ✨ Features
+## 🎯 The Problem We're Solving
+
+Currently, only **54% of registered Circle users have ≥3 trust connections**, and the hard problem for newcomers is finding the initial invite/trust connection. 
+
+Beyond the newcomer challenge, there's a critical missing piece: **the social layer for communication between Circles members**. This DataDAO helps strengthen the trust mesh by discovering new meaningful connections where people can share passions on projects, collaborate on initiatives, and build deeper relationships based on aligned goals and compatible skills.
+
+This group plan:
+- Facilitates introduction of newcomers to existing members
+- Strengthens connections between existing members through intelligent matching
+- Collects verifiable proofs to back claims as input to the matchmaking algorithm
+- Creates a social layer for peer to peer discovery and communication between members
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v23 or higher recommended)
+- [bun](https://bun.sh/docs/installation)
+
+> **Note for Windows Users:** [WSL 2](https://learn.microsoft.com/en-us/windows/wsl/install-manual) is required.
+
+### Getting Started with Paren
+
+1. **Clone and Setup**
+   ```bash
+   git clone https://github.com/memoirprotocol/withparen.git
+   cd eliza
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   bun install
+   bun run build
+   ```
+
+3. **Configure Environment**
+   ```bash
+   cd packages/agentcircleswithparen
+   cp .env.example .env
+   # Edit .env with your API keys and configuration
+   ```
+
+4. **Run the Agent**
+   ```bash
+   bun start
+   ```
+
+## 🤖 Try It Out
+
+- **Telegram Bot**: [@withparen_bot](https://t.me/withparen_bot)
+- **Join Group**: Only users with ≥3 trust connections can join at this stage
+- **Group CA**: `0xa7B9ff11459ad0D343d12A480F34C4533d2F4432`
+
+At this stage, it's great for onboarding existing members and having a large enough pool to open to unverified users.
+
+## 🗺️ Milestones
+
+### ✅ Current Milestone
+- Agent onboards verified Circles members into groups
+- Provides 1 daily match to verified members
+- Unverified members are guided to provide information about themselves
+- Chance for unverified users to get introduced to group members for potential trust and verification
+
+### 🔐 zkTLS Verification
+Enable zkTLS verification for unverified members and members to back the context used in matchmaking algorithm. Integration with technologies such as Opacity Network, Reclaim Protocol, and other verification infrastructure.
+
+### 💳 Subscription Model
+- **Phase 1**: Static subscription for members to access group and matchmaking services
+- **Phase 2**: Dynamic pricing based on value provided (verifiable data sources and creation of new trust bonds)
+- Economic deterrent for extractors and spammers through value-based pricing
+
+### 🔒 Safe Wallet Integration
+- Create Safe wallet for each user with Circles account as owner
+- Add agent as second owner with one-signature threshold
+- Progressive decentralization: transition agent to sign only via Safe module
+- Enable users to achieve full sovereignty over their wallets
+
+### 🛡️ Privacy-Preserving Memories
+- Store memories encrypted by user's Safe private key
+- Implement access control and privacy-preserving trustless compute for matchmaking services
+- Possible Integration with protocols: Ocean Protocol, Plurality Network, and other privacy-preserving compute infrastructure
+
+## 📚 Learn More
+
+- **The Protocol Where AI Incentives Align With Human Flourishing**: [memoirprotocol.com](https://memoirprotocol.com)
+- **Featured Packages**: `packages/agentcircleswithparen` and `packages/plugin-discover-connection`
+- **Initial inspiration out of a ETHGlobal hackathon**: [Grassroot DataDAOs ETHGlobal](https://ethglobal.com/showcase/grassroot-datadaos-kw3xd)
+- **Initial design and simulation with custum mint policy**: [Grassroot DataDAO simulation](https://github.com/amirmabhout/GrassrootDataDAOSimulation)
+
+## 🤝 Contributing
+
+Open source contributions are welcomed! Check out the `packages/plugin-discover-connection` directory to get started.
+
+---
+
+## 🤖 Built on ElizaOS Framework
+
+Paren is built on ElizaOS, a powerful framework for multi-agent development and deployment.
+
+### ✨ ElizaOS Features
 
 - 🛠️ Full-featured Discord, Telegram, and Farcaster connectors (and many more!)
 - 🔗 Support for every model (Llama, Grok, OpenAI, Anthropic, Gemini, etc.)
@@ -14,7 +113,7 @@ A framework for multi-agent development and deployment
 - 🚀 Highly extensible - create your own actions and clients.
 - 📦 Just works!
 
-## 🎯 Use Cases
+### 🎯 ElizaOS Use Cases
 
 - 🤖 Chatbots
 - 🕵️ Autonomous Agents
@@ -22,20 +121,20 @@ A framework for multi-agent development and deployment
 - 🎮 Video Game NPCs
 - 🧠 Trading
 
-## 🚀 Quick Start
+### 🚀 ElizaOS Quick Start
 
-### Prerequisites
+#### Prerequisites
 
 - [Node.js](https://nodejs.org/) (v23 or higher recommended)
 - [bun](https://bun.sh/docs/installation)
 
 > **Note for Windows Users:** [WSL 2](https://learn.microsoft.com/en-us/windows/wsl/install-manual) is required.
 
-### Use the CLI (Recommended)
+#### Use the CLI (Recommended)
 
 The ElizaOS CLI provides the fastest and most reliable way to create, configure, and run agents. It handles all the complex setup automatically.
 
-#### 1. Install the CLI
+##### 1. Install the CLI
 
 ```bash
 # Install the ElizaOS CLI globally
@@ -48,7 +147,7 @@ elizaos --version
 elizaos --help
 ```
 
-#### 2. Create Your First Project
+##### 2. Create Your First Project
 
 ```bash
 # Create a new project with interactive setup
@@ -64,7 +163,7 @@ elizaos create my-agent --yes --type project
 - **Model Provider**: `openai` (most reliable and well-tested)
 - **Project Type**: `project` (full ElizaOS application with runtime and agents)
 
-#### 3. Configure Your Agent
+##### 3. Configure Your Agent
 
 ```bash
 cd my-agent
@@ -90,7 +189,7 @@ DISCORD_APPLICATION_ID=your_discord_app_id
 DISCORD_API_TOKEN=your_discord_bot_token
 ```
 
-#### 4. Start Your Agent
+##### 4. Start Your Agent
 
 ```bash
 # Build and start your agent
@@ -105,7 +204,7 @@ After starting, your agent will be available at:
 - **Web Interface**: http://localhost:3000
 - **API Endpoint**: http://localhost:3000/api
 
-#### 5. Development Workflow
+##### 5. Development Workflow
 
 ```bash
 # Make changes to your agent code
@@ -117,7 +216,7 @@ elizaos start
 elizaos test
 ```
 
-#### Advanced CLI Commands
+##### Advanced CLI Commands
 
 ```bash
 # Create specific components
@@ -142,7 +241,7 @@ elizaos agent get --name "Agent"       # Get agent details
 elizaos agent set --name "Agent" --file config.json  # Update agent configuration
 ```
 
-#### Debugging and Logging
+##### Debugging and Logging
 
 ElizaOS uses comprehensive logging to help you understand what your agent is doing:
 
@@ -167,7 +266,7 @@ NODE_ENV=development elizaos start      # Development mode with extra logging
 - Use `elizaos test` frequently to catch issues early
 - Keep your `.env` file secure and never commit it to version control
 
-#### Available Commands Reference
+##### Available Commands Reference
 
 **All CLI Commands:**
 
@@ -189,15 +288,15 @@ elizaos tee        # Trusted Execution Environment commands
 elizaos <command> --help    # e.g., elizaos create --help, elizaos agent --help
 ```
 
-### Manually Start Eliza (Only recommended if you know what you are doing)
+#### Manually Start Eliza (Only recommended if you know what you are doing)
 
-#### Prerequisites
+##### Prerequisites
 
 - **Node.js** (v18+ recommended)
 - **bun** (for CLI and dependencies)
 - **git** (for project/plugin tests)
 
-#### Checkout the latest release
+##### Checkout the latest release
 
 ```bash
 # Clone the repository
@@ -209,7 +308,7 @@ git checkout $(git describe --tags --abbrev=0)
 # git checkout $(git describe --tags `git rev-list --tags --max-count=1`)
 ```
 
-#### Edit the .env file
+##### Edit the .env file
 
 Copy .env.example to .env and fill in the appropriate values.
 
@@ -219,7 +318,7 @@ cp .env.example .env
 
 Note: .env is optional. If you're planning to run multiple distinct agents, you can pass secrets through the character JSON
 
-#### Start Eliza
+##### Start Eliza
 
 Important! We now use Bun. If you are using npm, you will need to install Bun:
 https://bun.sh/docs/installation
@@ -230,7 +329,7 @@ bun run build
 bun start
 ```
 
-### Interact via Browser
+#### Interact via Browser
 
 Once Eliza is running, access the modern web interface at http://localhost:3000. It has been professionally redesigned and features:
 
