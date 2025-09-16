@@ -29,18 +29,20 @@
   "dependencies": {
     "@elizaos/cli": "latest",
     "@elizaos/core": "latest",
-    "@elizaos/plugin-google-genai": "^1.0.1",
-    "@elizaos/plugin-sql": "latest",
     "@elizaos/plugin-bootstrap": "1.3.1",
     "@elizaos/plugin-discover-connection": "workspace:*",
-    "@elizaos/plugin-telegram": "latest",
+    "@elizaos/plugin-google-genai": "^1.0.1",
+    "@elizaos/plugin-sql": "latest",
+    "@elizaos/plugin-telegram": "workspace:*",
     "@tanstack/react-query": "^5.29.0",
     "clsx": "^2.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^4.1.10",
-    "zod": "3.24.2"
+    "zod": "3.24.2",
+    "postgres": "^3.4.3",
+    "drizzle-orm": "^0.36.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
@@ -72,7 +74,11 @@
     "cy:test": "bun run test:install && cypress run --component --reporter spec",
     "cypress:component": "bun run test:install && cypress run --component",
     "cypress:e2e": "bun run test:install && cypress run --e2e",
-    "cypress:open": "bun run test:install && cypress open"
+    "cypress:open": "bun run test:install && cypress open",
+    "delete-user": "bun run scripts/deleteUserSimple.ts",
+    "delete-user:dry-run": "bun run scripts/deleteUserSimple.ts --dry-run",
+    "delete-user-advanced": "bun run scripts/deleteUser.ts",
+    "delete-user-advanced:dry-run": "bun run scripts/deleteUser.ts --dry-run"
   },
   "publishConfig": {
     "access": "public"

@@ -32,7 +32,7 @@ import {
   getLocalServerUrl,
 } from '@elizaos/core';
 import { v4 } from 'uuid';
-import { isAddress } from 'viem';
+import { extractWalletAddress } from './utils/walletDetection.ts';
 
 import * as actions from './actions/index.ts';
 import * as evaluators from './evaluators/index.ts';
@@ -338,13 +338,10 @@ const checkAutoTriggerConditions = async (
 
 /**
  * Detects if message contains a valid Ethereum wallet address
+ * Supports both direct addresses and metri.xyz profile links
  */
 const detectWalletAddress = (text: string): string | null => {
-  const addressMatch = text.match(/0x[a-fA-F0-9]{40}/);
-  if (addressMatch && isAddress(addressMatch[0])) {
-    return addressMatch[0];
-  }
-  return null;
+  return extractWalletAddress(text);
 };
 
 /**

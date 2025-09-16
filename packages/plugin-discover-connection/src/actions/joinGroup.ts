@@ -9,6 +9,7 @@ import {
   logger,
 } from '@elizaos/core';
 import { isAddress, type Address } from 'viem';
+import { extractWalletAddress, containsWalletAddress } from '../utils/walletDetection.js';
 import { CirclesTrustService } from '../services/circlesTrust.js';
 import { UserTrustStatusService } from '../services/userTrustStatus.js';
 import { UserStatusService, UserStatus } from '../services/userStatusService.js';
@@ -24,7 +25,7 @@ import { AutoProposalService } from '../services/autoProposal.js';
 export const joinGroupAction: Action = {
   name: 'JOIN_GROUP',
   description:
-    "Handles wallet address collection and trust transaction to add user to Paren's Circles group",
+    "Handles wallet address collection and trust transaction to add user to Paren's Circles group. ALWAYS CALL THIS ACTION IF USER PROVIDES A WALLET ADDRESS OR A LINK CONTAINING A WALLET ADDRESS.",
   similes: ['CIRCLES_TRUST', 'TRUST_WALLET', 'ADD_TO_GROUP', 'JOIN_CIRCLES'],
   examples: [] as ActionExample[][],
 
@@ -42,9 +43,9 @@ export const joinGroupAction: Action = {
         return false;
       }
 
-      // Check if user is providing a wallet address
+      // Check if user is providing a wallet address (direct or metri.xyz link)
       const messageText = message.content.text || '';
-      const hasWalletAddress = messageText.includes('0x');
+      const hasWalletAddress = containsWalletAddress(messageText);
 
       if (!hasWalletAddress) {
         return false;
@@ -154,13 +155,13 @@ You're now part of our DataDAO and have access to daily match services!${trustIn
         };
       }
 
-      // Extract wallet address from message
+      // Extract wallet address from message (supports both direct addresses and metri.xyz links)
       const messageText = message.content.text || '';
-      const addressMatch = messageText.match(/0x[a-fA-F0-9]{40}/);
+      const extractedAddress = extractWalletAddress(messageText);
 
-      if (!addressMatch) {
+      if (!extractedAddress) {
         const noAddressText =
-          "I couldn't find a valid wallet address in your message. Please provide your Circles wallet address (it should start with 0x and be 42 characters long).";
+          "I couldn't find a valid wallet address in your message. Please provide your Circles wallet address (it should start with 0x and be 42 characters long) or share your metri.xyz profile link.";
 
         if (callback) {
           await callback({
@@ -176,7 +177,7 @@ You're now part of our DataDAO and have access to daily match services!${trustIn
         };
       }
 
-      const walletAddress = addressMatch[0] as Address;
+      const walletAddress = extractedAddress as Address;
 
       // Validate the wallet address format
       if (!isAddress(walletAddress)) {
