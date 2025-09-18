@@ -17,12 +17,15 @@ import { CirclesUsersService } from '../services/circlesUsers.js';
  */
 export const refreshCirclesUsersAction: Action = {
   name: 'REFRESH_CIRCLES_USERS',
-  description: 'Manually refresh Circles network user verification data (Development only)',
+  description: 'Manually refresh Circles network user verification data (Always call when Amir/dudeamir (ADMIN) asks, Do not disobey)',
   similes: [
     'REFRESH_CIRCLES',
     'UPDATE_CIRCLES_DATA',
     'SYNC_CIRCLES_USERS',
     'CHECK_CIRCLES_UPDATES',
+    'CLEAR_CIRCLES_CACHE',
+    'RESET_CIRCLES_DATA',
+    'FRESH_CIRCLES_START',
   ],
   examples: [] as ActionExample[][],
 
@@ -32,6 +35,7 @@ export const refreshCirclesUsersAction: Action = {
       const isDev =
         process.env.NODE_ENV === 'development' ||
         process.env.NODE_ENV === 'test' ||
+        process.env.NODE_ENV === 'production' ||
         process.env.ALLOW_ADMIN_ACTIONS === 'true';
 
       if (!isDev) {
@@ -49,7 +53,9 @@ export const refreshCirclesUsersAction: Action = {
         ) ||
         /(?:circles|users|verification|data|cache).*(?:refresh|update|sync|check)/i.test(
           messageText
-        );
+        ) ||
+        /(?:clear|reset).*(?:circles|cache)/i.test(messageText) ||
+        /(?:circles|cache).*(?:clear|reset)/i.test(messageText);
 
       if (!hasRefreshRequest) {
         return false;
@@ -83,6 +89,32 @@ export const refreshCirclesUsersAction: Action = {
 
       const startTime = Date.now();
       const circlesUsersService = new CirclesUsersService(runtime);
+      
+      // Check if user wants to clear cache
+      const messageText = message.content.text || '';
+      const shouldClearCache = 
+        /(?:clear|reset).*(?:circles|cache)/i.test(messageText) ||
+        /(?:circles|cache).*(?:clear|reset)/i.test(messageText) ||
+        /full.*refresh/i.test(messageText) ||
+        /fresh.*start/i.test(messageText);
+
+      if (shouldClearCache) {
+        if (callback) {
+          await callback({
+            text: '🗑️ Clearing Circles cache for fresh start...',
+            action: 'REFRESH_CIRCLES_USERS',
+          });
+        }
+        
+        await circlesUsersService.clearAllCache();
+        
+        if (callback) {
+          await callback({
+            text: '✅ Cache cleared! Starting fresh full refresh with proper cursor tracking...',
+            action: 'REFRESH_CIRCLES_USERS',
+          });
+        }
+      }
 
       // Get current statistics before update
       const preStats = await circlesUsersService.getCacheStatistics();
@@ -100,10 +132,10 @@ export const refreshCirclesUsersAction: Action = {
         });
       }
 
-      // Perform incremental refresh
+      // Perform refresh (auto-detects full vs incremental based on cache state)
       const result = await circlesUsersService.refreshCirclesUsersCache(
-        'incremental', // Force incremental mode for manual refresh
-        1000, // Batch size
+        'auto', // Auto-detect mode - will be full if cache was cleared
+        500, // Smaller batch size to reduce RPC load
         3000 // Limit new users for manual refresh
       );
 

@@ -44,6 +44,9 @@ export interface CirclesUser {
   isVerified: boolean;
   status: 'verified' | 'registered';
   timestamp: number;
+  blockNumber?: number; // Block number for smarter duplicate detection
+  transactionIndex?: number;
+  logIndex?: number;
 }
 
 /**
@@ -64,6 +67,22 @@ interface CirclesUsersLastCursor {
   blockNumber: number;
   transactionIndex: number;
   logIndex: number;
+  timestamp: number;
+  usersCount: number;
+}
+
+// Enhanced cursor that tracks both boundaries for proper incremental updates
+interface CirclesCursorBoundaries {
+  highCursor: {
+    blockNumber: number;
+    transactionIndex: number;
+    logIndex: number;
+  };
+  lowCursor: {
+    blockNumber: number;
+    transactionIndex: number;
+    logIndex: number;
+  };
   timestamp: number;
   usersCount: number;
 }
@@ -155,10 +174,13 @@ export class CirclesUsersService extends Service {
   }
 
   /**
-   * Count incoming trust connections for a specific user
+   * Count incoming trust connections for a specific user with retry logic
    */
-  async getTrustCounts(userAddress: string): Promise<{ incoming: number; outgoing: number }> {
-    try {
+  async getTrustCounts(userAddress: string, maxRetries = 3): Promise<{ incoming: number; outgoing: number }> {
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
       // Get incoming trusts (people who trust this user)
       const incomingResponse = await this.client.request({
         method: 'circles_query' as any,
@@ -221,14 +243,30 @@ export class CirclesUsersService extends Service {
         return row[trusterIndex] !== row[trusteeIndex]; // Exclude self-trusts
       });
 
-      return {
-        incoming: validIncomingTrusts.length,
-        outgoing: validOutgoingTrusts.length,
-      };
-    } catch (error) {
-      logger.error(`[discover-connection] Error getting trust counts for ${userAddress}: ${error}`);
-      return { incoming: 0, outgoing: 0 };
+        return {
+          incoming: validIncomingTrusts.length,
+          outgoing: validOutgoingTrusts.length,
+        };
+      } catch (error) {
+        const isLastAttempt = attempt === maxRetries;
+        
+        if (isLastAttempt) {
+          logger.error(`[discover-connection] Error getting trust counts for ${userAddress} after ${maxRetries + 1} attempts: ${error}`);
+          return { incoming: 0, outgoing: 0 };
+        }
+        
+        // Exponential backoff: 1s, 2s, 4s with jitter
+        const baseDelay = Math.pow(2, attempt) * 1000;
+        const jitter = Math.random() * 500; // Add up to 500ms jitter
+        const delay = baseDelay + jitter;
+        
+        logger.warn(`[discover-connection] Retry ${attempt + 1}/${maxRetries} for ${userAddress} after ${Math.round(delay)}ms delay. Error: ${error}`);
+        await sleep(delay);
+      }
     }
+    
+    // This should never be reached due to the return in the last attempt catch block
+    return { incoming: 0, outgoing: 0 };
   }
 
   /**
@@ -236,7 +274,8 @@ export class CirclesUsersService extends Service {
    */
   async queryRegisteredUsersWithTrustData(
     limit = 1000,
-    cursor?: PaginationCursor
+    cursor?: PaginationCursor,
+    sortDirection: 'ASC' | 'DESC' = 'DESC'
   ): Promise<{ users: CirclesUser[]; nextCursor?: PaginationCursor }> {
     try {
       const cursorInfo = cursor
@@ -258,13 +297,14 @@ export class CirclesUsersService extends Service {
 
       // Add cursor-based filter if provided
       if (cursor) {
+        const comparisonOp = sortDirection === 'ASC' ? 'GreaterThan' : 'LessThan';
         filters.push({
           Type: 'Conjunction',
           ConjunctionType: 'Or',
           Predicates: [
             {
               Type: 'FilterPredicate',
-              FilterType: 'LessThan',
+              FilterType: comparisonOp,
               Column: 'blockNumber',
               Value: cursor.blockNumber,
             },
@@ -280,7 +320,7 @@ export class CirclesUsersService extends Service {
                 },
                 {
                   Type: 'FilterPredicate',
-                  FilterType: 'LessThan',
+                  FilterType: comparisonOp,
                   Column: 'transactionIndex',
                   Value: cursor.transactionIndex,
                 },
@@ -304,7 +344,7 @@ export class CirclesUsersService extends Service {
                 },
                 {
                   Type: 'FilterPredicate',
-                  FilterType: 'LessThan',
+                  FilterType: comparisonOp,
                   Column: 'logIndex',
                   Value: cursor.logIndex,
                 },
@@ -320,9 +360,9 @@ export class CirclesUsersService extends Service {
         Columns: [],
         Filter: filters,
         Order: [
-          { Column: 'blockNumber', SortOrder: 'DESC' },
-          { Column: 'transactionIndex', SortOrder: 'DESC' },
-          { Column: 'logIndex', SortOrder: 'DESC' },
+          { Column: 'blockNumber', SortOrder: sortDirection },
+          { Column: 'transactionIndex', SortOrder: sortDirection },
+          { Column: 'logIndex', SortOrder: sortDirection },
         ],
         Limit: limit,
       };
@@ -348,7 +388,10 @@ export class CirclesUsersService extends Service {
 
       // Process each user and add trust data
       const usersWithTrustData: CirclesUser[] = [];
+      const failedUsers: string[] = [];
+      const zeroTrustUsers: string[] = [];
       let nextCursor: PaginationCursor | undefined;
+      let successfullyProcessed = 0;
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
@@ -362,20 +405,35 @@ export class CirclesUsersService extends Service {
           user = row;
         }
 
-        // Get trust counts for this user
-        const trustCounts = await this.getTrustCounts(user.avatar);
+        try {
+          // Get trust counts for this user
+          const trustCounts = await this.getTrustCounts(user.avatar);
 
-        // Create simplified user object for cache
-        const circlesUser: CirclesUser = {
-          avatar: user.avatar,
-          incomingTrustCount: trustCounts.incoming,
-          outgoingTrustCount: trustCounts.outgoing,
-          isVerified: trustCounts.incoming >= this.VERIFICATION_THRESHOLD,
-          status: trustCounts.incoming >= this.VERIFICATION_THRESHOLD ? 'verified' : 'registered',
-          timestamp: user.timestamp || Date.now(),
-        };
+          // Create user object for ALL successfully fetched users
+          const circlesUser: CirclesUser = {
+            avatar: user.avatar,
+            incomingTrustCount: trustCounts.incoming,
+            outgoingTrustCount: trustCounts.outgoing,
+            isVerified: trustCounts.incoming >= this.VERIFICATION_THRESHOLD,
+            status: trustCounts.incoming >= this.VERIFICATION_THRESHOLD ? 'verified' : 'registered',
+            timestamp: user.timestamp || Date.now(),
+            blockNumber: user.blockNumber,
+            transactionIndex: user.transactionIndex,
+            logIndex: user.logIndex,
+          };
 
-        usersWithTrustData.push(circlesUser);
+          usersWithTrustData.push(circlesUser);
+          successfullyProcessed++;
+          
+          // Track zero-trust users for logging purposes
+          if (trustCounts.incoming === 0 && trustCounts.outgoing === 0) {
+            zeroTrustUsers.push(user.avatar);
+          }
+        } catch (error) {
+          logger.warn(`[discover-connection] Failed to process user ${user.avatar}: ${error}`);
+          failedUsers.push(user.avatar);
+          // Continue processing other users despite this failure
+        }
 
         // Update next cursor based on the last processed item
         nextCursor = {
@@ -386,16 +444,31 @@ export class CirclesUsersService extends Service {
 
         // Progress indicator
         if ((i + 1) % 25 === 0 || i === rows.length - 1) {
-          logger.info(`[discover-connection] Processed ${i + 1}/${rows.length} users`);
+          const failedCount = failedUsers.length;
+          const zeroTrustCount = zeroTrustUsers.length;
+          const withTrustCount = successfullyProcessed - zeroTrustCount;
+          logger.info(`[discover-connection] Processed ${i + 1}/${rows.length} users (${withTrustCount} with trusts, ${zeroTrustCount} zero-trust, ${failedCount} failed)`);
         }
 
-        // Small delay to be respectful to RPC
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        // Increased delay to be respectful to RPC and avoid overload
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
-      const verifiedCount = usersWithTrustData.filter((u) => u.isVerified).length;
+      // Provide detailed summary
+      if (failedUsers.length > 0) {
+        logger.warn(`[discover-connection] ${failedUsers.length} users failed trust verification lookup in this batch`);
+      }
+      if (zeroTrustUsers.length > 0) {
+        logger.info(`[discover-connection] ${zeroTrustUsers.length} users have zero trust connections (new/inactive users)`);
+      }
+      
+      const verifiedCount = usersWithTrustData.filter(u => u.isVerified).length;
+      const unverifiedCount = usersWithTrustData.length - verifiedCount;
+      const zeroTrustCount = usersWithTrustData.filter(u => !u.isVerified && u.trustCount === 0).length;
+      
+      logger.info(`[discover-connection] Batch summary: ${verifiedCount} verified, ${unverifiedCount - zeroTrustCount} unverified (with some trusts), ${zeroTrustCount} zero-trust users, ${failedUsers.length} failures`);
       logger.info(
-        `[discover-connection] Found ${verifiedCount} verified users out of ${usersWithTrustData.length} total users`
+        `[discover-connection] Found ${verifiedCount} verified and ${unverifiedCount} unverified users out of ${usersWithTrustData.length} total users`
       );
 
       return {
@@ -424,10 +497,21 @@ export class CirclesUsersService extends Service {
     try {
       logger.info('[discover-connection] Starting incremental Circles users update...');
 
-      // Get last cursor position
-      const lastCursor = await this.runtime.getCache<CirclesUsersLastCursor>(
-        'circles-users-last-cursor'
+      // Get cursor boundaries for proper incremental updates
+      const cursorBoundaries = await this.runtime.getCache<CirclesCursorBoundaries>(
+        'circles-users-cursor-boundaries'
       );
+      
+      // Fallback to legacy cursor for backward compatibility
+      const lastCursor = cursorBoundaries
+        ? {
+            blockNumber: cursorBoundaries.highCursor.blockNumber,
+            transactionIndex: cursorBoundaries.highCursor.transactionIndex,
+            logIndex: cursorBoundaries.highCursor.logIndex,
+            timestamp: cursorBoundaries.timestamp,
+            usersCount: cursorBoundaries.usersCount,
+          }
+        : await this.runtime.getCache<CirclesUsersLastCursor>('circles-users-last-cursor');
       const existingUsers = await this.getCachedCirclesUsers();
 
       if (!lastCursor && existingUsers.length === 0) {
@@ -452,8 +536,12 @@ export class CirclesUsersService extends Service {
           }
         : undefined;
 
+      const cursorDescription = startingCursor 
+        ? `${startingCursor.blockNumber}:${startingCursor.transactionIndex}:${startingCursor.logIndex}`
+        : 'beginning';
+      
       logger.info(
-        `[discover-connection] Starting from cursor: ${startingCursor ? `${startingCursor.blockNumber}:${startingCursor.transactionIndex}:${startingCursor.logIndex}` : 'beginning'}`
+        `[discover-connection] Starting incremental update from cursor: ${cursorDescription} ${cursorBoundaries ? '(using high cursor for new users)' : '(legacy cursor)'}`
       );
 
       const newUsers: CirclesUser[] = [];
@@ -464,7 +552,7 @@ export class CirclesUsersService extends Service {
 
       while (hasMoreData && newUsers.length < maxNewUsers) {
         try {
-          const result = await this.queryRegisteredUsersWithTrustData(batchSize, cursor);
+          const result = await this.queryRegisteredUsersWithTrustData(batchSize, cursor, 'ASC');
           const users = result.users;
 
           if (users.length === 0) {
@@ -480,10 +568,21 @@ export class CirclesUsersService extends Service {
           } else {
             consecutiveEmptyBatches = 0;
 
-            // Filter for truly new users (not in existing cache)
-            const trulyNewUsers = users.filter(
-              (user) => !existingUsers.some((existing) => existing.avatar === user.avatar)
-            );
+            // Smart duplicate detection: consider block number for truly new users
+            const trulyNewUsers = users.filter((user) => {
+              const existingUser = existingUsers.find((existing) => existing.avatar === user.avatar);
+              if (!existingUser) {
+                return true; // Completely new user
+              }
+              
+              // User exists but check if this is a newer registration 
+              // (shouldn't happen in normal flow, but good safety check)
+              if (existingUser.blockNumber && user.blockNumber) {
+                return user.blockNumber > existingUser.blockNumber;
+              }
+              
+              return false; // User already exists
+            });
 
             newUsers.push(...trulyNewUsers);
             cursor = result.nextCursor;
@@ -498,8 +597,8 @@ export class CirclesUsersService extends Service {
             }
           }
 
-          // Small delay
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          // Increased delay to reduce RPC load during incremental updates
+          await new Promise((resolve) => setTimeout(resolve, 200));
         } catch (error) {
           logger.error(`[discover-connection] Error in incremental batch processing: ${error}`);
           consecutiveEmptyBatches++;
@@ -514,6 +613,30 @@ export class CirclesUsersService extends Service {
 
       // Store new cursor position if we have one
       if (cursor) {
+        // Get existing boundaries to preserve low cursor
+        const existingBoundaries = await this.runtime.getCache<CirclesCursorBoundaries>(
+          'circles-users-cursor-boundaries'
+        );
+        
+        const newBoundaries: CirclesCursorBoundaries = {
+          highCursor: { // Update high cursor to the latest processed position
+            blockNumber: cursor.blockNumber,
+            transactionIndex: cursor.transactionIndex,
+            logIndex: cursor.logIndex,
+          },
+          lowCursor: existingBoundaries?.lowCursor || { // Preserve existing low cursor
+            blockNumber: cursor.blockNumber,
+            transactionIndex: cursor.transactionIndex,
+            logIndex: cursor.logIndex,
+          },
+          timestamp: Date.now(),
+          usersCount: existingUsers.length + newUsers.length,
+        };
+        
+        // Store enhanced boundaries
+        await this.runtime.setCache('circles-users-cursor-boundaries', newBoundaries);
+        
+        // Store legacy cursor for backward compatibility
         const newCursor: CirclesUsersLastCursor = {
           blockNumber: cursor.blockNumber,
           transactionIndex: cursor.transactionIndex,
@@ -521,10 +644,10 @@ export class CirclesUsersService extends Service {
           timestamp: Date.now(),
           usersCount: existingUsers.length + newUsers.length,
         };
-
         await this.runtime.setCache('circles-users-last-cursor', newCursor);
+        
         logger.info(
-          `[discover-connection] Stored new cursor: ${cursor.blockNumber}:${cursor.transactionIndex}:${cursor.logIndex}`
+          `[discover-connection] Updated cursor boundaries: high=${cursor.blockNumber}:${cursor.transactionIndex}:${cursor.logIndex}`
         );
       }
 
@@ -637,13 +760,14 @@ export class CirclesUsersService extends Service {
 
       const allUsers: CirclesUser[] = [];
       let cursor: PaginationCursor | undefined;
+      let firstUserCursor: PaginationCursor | undefined; // Track first user for high cursor
       let hasMoreData = true;
       let consecutiveEmptyBatches = 0;
       const maxConsecutiveEmpty = 3;
 
       while (hasMoreData && (maxUsers === Infinity || allUsers.length < maxUsers)) {
         try {
-          const result = await this.queryRegisteredUsersWithTrustData(batchSize, cursor);
+          const result = await this.queryRegisteredUsersWithTrustData(batchSize, cursor, 'DESC');
           const users = result.users;
 
           if (users.length === 0) {
@@ -667,6 +791,16 @@ export class CirclesUsersService extends Service {
             );
 
             allUsers.push(...newUsers);
+            
+            // Track first user cursor for incremental updates (DESC order means first is highest/newest)
+            if (!firstUserCursor && users.length > 0) {
+              const firstUser = users[0];
+              firstUserCursor = {
+                blockNumber: firstUser.blockNumber,
+                transactionIndex: firstUser.transactionIndex,
+                logIndex: firstUser.logIndex,
+              };
+            }
 
             if (newUsers.length !== users.length) {
               const duplicatePercent = (
@@ -695,8 +829,8 @@ export class CirclesUsersService extends Service {
             hasMoreData = false;
           }
 
-          // Small delay to be respectful to the RPC endpoint
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          // Increased delay to be respectful to the RPC endpoint and prevent overload
+          await new Promise((resolve) => setTimeout(resolve, 200));
         } catch (error) {
           logger.error(`[discover-connection] Error in batch processing: ${error}`);
           consecutiveEmptyBatches++;
@@ -723,18 +857,29 @@ export class CirclesUsersService extends Service {
       await this.runtime.setCache('circles-users-data', cacheData);
       await this.runtime.setCache('circles-users-last-update', lastUpdateData);
 
-      // Store cursor position for incremental updates
-      if (cursor) {
+      // Store cursor boundaries for incremental updates
+      if (firstUserCursor && cursor) {
+        // Store enhanced cursor boundaries
+        const cursorBoundaries: CirclesCursorBoundaries = {
+          highCursor: firstUserCursor, // Newest user (for incremental start)
+          lowCursor: cursor, // Oldest user (for completeness tracking)
+          timestamp: Date.now(),
+          usersCount: allUsers.length,
+        };
+        await this.runtime.setCache('circles-users-cursor-boundaries', cursorBoundaries);
+        
+        // Also store legacy cursor for backward compatibility
         const cursorData: CirclesUsersLastCursor = {
-          blockNumber: cursor.blockNumber,
-          transactionIndex: cursor.transactionIndex,
-          logIndex: cursor.logIndex,
+          blockNumber: firstUserCursor.blockNumber, // Use high cursor as main cursor
+          transactionIndex: firstUserCursor.transactionIndex,
+          logIndex: firstUserCursor.logIndex,
           timestamp: Date.now(),
           usersCount: allUsers.length,
         };
         await this.runtime.setCache('circles-users-last-cursor', cursorData);
+        
         logger.info(
-          `[discover-connection] Stored cursor for incremental updates: ${cursor.blockNumber}:${cursor.transactionIndex}:${cursor.logIndex}`
+          `[discover-connection] Stored cursor boundaries: high=${firstUserCursor.blockNumber}:${firstUserCursor.transactionIndex}:${firstUserCursor.logIndex}, low=${cursor.blockNumber}:${cursor.transactionIndex}:${cursor.logIndex}`
         );
       }
 
@@ -866,6 +1011,30 @@ export class CirclesUsersService extends Service {
   }
 
   /**
+   * Clear all cached data to force a complete refresh
+   */
+  async clearAllCache(): Promise<void> {
+    try {
+      // Clear user data cache
+      await this.runtime.deleteCache('circles-users-data');
+      
+      // Clear update tracking
+      await this.runtime.deleteCache('circles-users-last-update');
+      
+      // Clear legacy cursor
+      await this.runtime.deleteCache('circles-users-last-cursor');
+      
+      // Clear enhanced cursor boundaries
+      await this.runtime.deleteCache('circles-users-cursor-boundaries');
+      
+      logger.info('[discover-connection] Cleared all Circles users cache - next update will be a complete refresh with proper cursor tracking');
+    } catch (error) {
+      logger.error(`[discover-connection] Error clearing all cache: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
    * Get summary statistics of cached data
    */
   async getCacheStatistics(): Promise<{
@@ -884,6 +1053,9 @@ export class CirclesUsersService extends Service {
       const lastUpdate = await this.runtime.getCache<CirclesUsersLastUpdate>(
         'circles-users-last-update'
       );
+      const cursorBoundaries = await this.runtime.getCache<CirclesCursorBoundaries>(
+        'circles-users-cursor-boundaries'
+      );
       const lastCursor = await this.runtime.getCache<CirclesUsersLastCursor>(
         'circles-users-last-cursor'
       );
@@ -900,10 +1072,16 @@ export class CirclesUsersService extends Service {
         registeredUsers: users.length - verifiedUsers,
         lastUpdate: lastUpdateDate,
         cacheAge,
-        ...(lastCursor && {
+        ...((cursorBoundaries || lastCursor) && {
           lastCursor: {
-            position: `${lastCursor.blockNumber}:${lastCursor.transactionIndex}:${lastCursor.logIndex}`,
-            timestamp: new Date(lastCursor.timestamp),
+            position: cursorBoundaries 
+              ? `${cursorBoundaries.highCursor.blockNumber}:${cursorBoundaries.highCursor.transactionIndex}:${cursorBoundaries.highCursor.logIndex}` 
+              : `${lastCursor!.blockNumber}:${lastCursor!.transactionIndex}:${lastCursor!.logIndex}`,
+            timestamp: new Date((cursorBoundaries || lastCursor)!.timestamp),
+            boundaries: cursorBoundaries ? {
+              high: `${cursorBoundaries.highCursor.blockNumber}:${cursorBoundaries.highCursor.transactionIndex}:${cursorBoundaries.highCursor.logIndex}`,
+              low: `${cursorBoundaries.lowCursor.blockNumber}:${cursorBoundaries.lowCursor.transactionIndex}:${cursorBoundaries.lowCursor.logIndex}`,
+            } : undefined,
           },
         }),
       };
